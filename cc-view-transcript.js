@@ -12,6 +12,10 @@ const fs = require('fs');
 const readline = require('readline');
 const path = require('path');
 const os = require('os');
+const { exec } = require('child_process');
+const { promisify } = require('util');
+
+const execAsync = promisify(exec);
 
 // ================================================================================
 // CONFIGURATION & CONSTANTS
@@ -41,32 +45,113 @@ const EMOJI = {
     metadata: '📋',
 };
 
+const DISPLAY = {
+    blockSeparator: '—'.repeat(40),
+    metadataSeparator: '═'.repeat(60),
+};
+
 // ================================================================================
 // MESSAGE PARSER
 // ================================================================================
 
 class MessageParser {
     /**
-     * Parse a single JSONL line into a structured message
+     * Check if a tool name indicates a sub-agent call
+     * @param {string} toolName - Name of the tool being called
+     * @returns {boolean} True if this is a sub-agent (Task tool or name contains 'agent')
      */
-    static parseLine(line) {
+    static isSubAgent(toolName) {
+        return toolName === 'Task' || toolName?.includes('agent');
+    }
+
+    /**
+     * Extract text content from tool result, handling multiple blocks and different types
+     * @param {string|Array} content - Tool result content (string or array of content blocks)
+     * @returns {Object} Object with {text, hasMultipleBlocks, hasNonTextBlocks}
+     */
+    static extractToolResultText(content) {
+        if (typeof content === 'string') {
+            return {
+                text: content,
+                hasMultipleBlocks: false,
+                hasNonTextBlocks: false,
+            };
+        }
+
+        if (!Array.isArray(content)) {
+            return {
+                text: '',
+                hasMultipleBlocks: false,
+                hasNonTextBlocks: false,
+            };
+        }
+
+        const textParts = [];
+        const hasMultipleBlocks = content.length > 1;
+        let hasNonTextBlocks = false;
+
+        for (let i = 0; i < content.length; i++) {
+            const contentBlock = content[i];
+
+            if (contentBlock.type === 'text' && contentBlock.text) {
+                // Add separator for multiple blocks
+                if (i > 0) {
+                    textParts.push('\n--- Content Block ' + (i + 1) + ' ---\n');
+                }
+                textParts.push(contentBlock.text);
+            } else if (contentBlock.type === 'image') {
+                // Indicate image blocks
+                hasNonTextBlocks = true;
+                textParts.push(
+                    `\n[IMAGE BLOCK ${i + 1}: ${contentBlock.source?.type || 'unknown type'}]\n`
+                );
+            } else {
+                // Other block types
+                hasNonTextBlocks = true;
+                textParts.push(
+                    `\n[${(contentBlock.type || 'UNKNOWN').toUpperCase()} BLOCK ${i + 1}]\n`
+                );
+            }
+        }
+
+        return {
+            text: textParts.join(''),
+            hasMultipleBlocks,
+            hasNonTextBlocks,
+        };
+    }
+
+    /**
+     * Parse a single JSONL line into a structured message
+     * @param {string} line - The JSONL line to parse
+     * @param {number} lineNumber - Line number for error reporting
+     * @returns {Object} Parsed message or error object
+     */
+    static parseLine(line, lineNumber = null) {
         try {
             return JSON.parse(line);
         } catch (error) {
-            console.error('Failed to parse line:', error.message);
-            return null;
+            // Return error object instead of null to preserve error information
+            // This allows errors to be displayed in the output (Display Integrity principle)
+            return {
+                type: 'parse_error',
+                lineNumber,
+                error: error.message,
+                preview: line.substring(0, 100),
+                fullLine: line,
+            };
         }
     }
 
     /**
      * Extract content blocks from a message
+     * @param {Object} message - Parsed message object with type and content
+     * @returns {Array<Object>} Array of content blocks with type, text, emoji, and metadata
      */
     static extractContent(message) {
         const content = [];
 
-        if (!message) return content;
-
-        // Handle different message types
+        // Default case handles null/undefined
         switch (message.type) {
             case 'assistant':
                 return this.extractAssistantContent(message);
@@ -76,11 +161,18 @@ class MessageParser {
                 return this.extractSystemContent(message);
             case 'summary':
                 return this.extractSummaryContent(message);
+            case 'parse_error':
+                return this.extractParseErrorContent(message);
             default:
                 return content;
         }
     }
 
+    /**
+     * Extract content from assistant message
+     * @param {Object} message - Assistant message with thinking, text, and tool_use blocks
+     * @returns {Array<Object>} Array of content blocks (thinking, text, tool_call)
+     */
     static extractAssistantContent(message) {
         const content = [];
         const messageContent = message.message?.content || [];
@@ -110,7 +202,7 @@ class MessageParser {
                         emoji: EMOJI.toolCall,
                         // TODO: Implement sub-agent transcript parsing
                         // Need to recursively parse tool results that contain nested transcripts
-                        isSubAgent: block.name === 'Task' || block.name?.includes('agent'),
+                        isSubAgent: MessageParser.isSubAgent(block.name),
                     });
                     break;
             }
@@ -119,6 +211,11 @@ class MessageParser {
         return content;
     }
 
+    /**
+     * Extract content from user message
+     * @param {Object} message - User message with text and/or tool_result blocks
+     * @returns {Array<Object>} Array of content blocks (human text, tool_result)
+     */
     static extractUserContent(message) {
         const content = [];
         const messageContent = message.message?.content;
@@ -132,23 +229,19 @@ class MessageParser {
         } else if (Array.isArray(messageContent)) {
             for (const block of messageContent) {
                 if (block.type === 'tool_result') {
-                    const isError = message.toolUseResult?.is_error ||
-                                  block.is_error ||
-                                  false;
+                    const isError = !!(message.toolUseResult?.is_error || block.is_error);
 
-                    // Extract text from tool result content
-                    let resultText = '';
-                    if (typeof block.content === 'string') {
-                        resultText = block.content;
-                    } else if (Array.isArray(block.content) && block.content[0]?.text) {
-                        resultText = block.content[0].text;
-                    }
+                    // Extract ALL content blocks from tool result (Display Completeness principle)
+                    const { text, hasMultipleBlocks, hasNonTextBlocks } =
+                        MessageParser.extractToolResultText(block.content);
 
                     content.push({
                         type: 'tool_result',
                         id: block.tool_use_id,
-                        text: resultText,
+                        text,
                         isError,
+                        hasMultipleBlocks,
+                        hasNonTextBlocks,
                         emoji: isError ? EMOJI.toolError : EMOJI.toolResult,
                     });
                 } else if (block.type === 'text') {
@@ -164,6 +257,11 @@ class MessageParser {
         return content;
     }
 
+    /**
+     * Extract content from system message
+     * @param {Object} message - System message with content and optional level
+     * @returns {Array<Object>} Single-element array with system content block
+     */
     static extractSystemContent(message) {
         return [{
             type: 'system',
@@ -173,11 +271,31 @@ class MessageParser {
         }];
     }
 
+    /**
+     * Extract content from summary message
+     * @param {Object} message - Summary message
+     * @returns {Array<Object>} Single-element array with summary content block
+     */
     static extractSummaryContent(message) {
         return [{
             type: 'summary',
             text: message.summary,
             emoji: EMOJI.metadata,
+        }];
+    }
+
+    /**
+     * Extract content from parse error
+     * @param {Object} message - Parse error object with lineNumber, error, and preview
+     * @returns {Array<Object>} Single-element array with parse error content block
+     */
+    static extractParseErrorContent(message) {
+        return [{
+            type: 'parse_error',
+            lineNumber: message.lineNumber,
+            error: message.error,
+            preview: message.preview,
+            emoji: '⚠️',
         }];
     }
 }
@@ -189,23 +307,32 @@ class MessageParser {
 class MessageFormatter {
     constructor(options = {}) {
         this.options = { ...DEFAULT_OPTIONS, ...options };
-        this.separator = '—'.repeat(40);
+        this.separator = DISPLAY.blockSeparator;
     }
 
     /**
      * Format a parsed message for display
+     * @param {Object} message - Parsed message object
+     * @returns {string} Formatted message as string with headers, content, and separators
      */
     format(message) {
         const content = MessageParser.extractContent(message);
         const output = [];
 
         for (const block of content) {
-            // Apply filters
-            if (!this.shouldDisplay(block)) continue;
-
-            const formatted = this.formatBlock(block, message);
-            if (formatted) {
-                output.push(formatted);
+            // Check if content should be displayed in full or as indicator
+            if (!this.shouldDisplay(block)) {
+                // Show one-line indicator for filtered content (Display Integrity principle)
+                const indicator = this.formatFilteredIndicator(block);
+                if (indicator) {
+                    output.push(indicator);
+                }
+            } else {
+                // Show full content
+                const formatted = this.formatBlock(block, message);
+                if (formatted) {
+                    output.push(formatted);
+                }
             }
         }
 
@@ -227,6 +354,75 @@ class MessageFormatter {
         }
     }
 
+    formatFilteredIndicator(block) {
+        // Return one-line indicator showing what's hidden and how to show it
+        // This maintains Display Integrity principle - content is never silently removed
+        const lines = [''];
+
+        switch (block.type) {
+            case 'thinking':
+                lines.push(`${block.emoji} [THINKING BLOCK HIDDEN - remove --no-thinking to show]`);
+                break;
+            case 'tool_call':
+                lines.push(`${block.emoji} [TOOL CALL HIDDEN: ${block.name} - remove --no-tools to show]`);
+                break;
+            case 'tool_result':
+                const status = block.isError ? 'ERROR' : 'SUCCESS';
+                lines.push(`${block.emoji} [TOOL RESULT HIDDEN (${status}) - remove --no-tools to show]`);
+                break;
+            case 'system':
+                lines.push(`${block.emoji} [SYSTEM MESSAGE HIDDEN - use --show-system to show]`);
+                break;
+            default:
+                return null;
+        }
+
+        return lines.join('\n');
+    }
+
+    tryPrettyPrintJson(text) {
+        // Attempt to parse and pretty-print JSON for better readability
+        // If not valid JSON, return original text
+        if (!text || typeof text !== 'string') {
+            return text;
+        }
+
+        // Trim whitespace to check if entire content is JSON
+        const trimmed = text.trim();
+
+        // Quick check: does it look like JSON?
+        if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+            return text;
+        }
+
+        try {
+            const parsed = JSON.parse(trimmed);
+            return JSON.stringify(parsed, null, 2);
+        } catch (error) {
+            // Not valid JSON, return original
+            return text;
+        }
+    }
+
+    truncateIfNeeded(text, label = 'content') {
+        // Apply truncation consistently to all content types
+        // Note: option is called 'truncateTools' for historical reasons,
+        // but it now applies to ALL text content (thinking, messages, tools, etc.)
+        // Returns array of lines to add to output
+        if (!this.options.truncateTools || !text) {
+            return [text || ''];
+        }
+
+        if (text.length > this.options.maxToolLength) {
+            return [
+                text.substring(0, this.options.maxToolLength) + '...',
+                `[Truncated ${label} - ${text.length} total characters]`
+            ];
+        }
+
+        return [text];
+    }
+
     formatBlock(block, message) {
         const lines = [];
 
@@ -239,10 +435,27 @@ class MessageFormatter {
         // Add content based on type
         switch (block.type) {
             case 'thinking':
+                // Apply truncation to thinking blocks
+                lines.push(...this.truncateIfNeeded(block.text, 'thinking block'));
+                break;
+
             case 'text':
+                // Apply truncation to Claude responses
+                lines.push(...this.truncateIfNeeded(block.text, 'response'));
+                break;
+
             case 'human':
+                // Apply truncation to human messages
+                lines.push(...this.truncateIfNeeded(block.text, 'message'));
+                break;
+
             case 'system':
+                // Apply truncation to system messages
+                lines.push(...this.truncateIfNeeded(block.text, 'system message'));
+                break;
+
             case 'summary':
+                // Don't truncate summaries (they're metadata)
                 lines.push(block.text || '');
                 break;
 
@@ -253,13 +466,11 @@ class MessageFormatter {
                     lines.push(`Type: SUB-AGENT`);
                 }
 
+                // Apply truncation to tool inputs
                 const inputStr = JSON.stringify(block.input, null, 2);
-                if (this.options.truncateTools && inputStr.length > this.options.maxToolLength) {
-                    lines.push(`Input: ${inputStr.substring(0, this.options.maxToolLength)}...`);
-                    lines.push(`[Truncated - ${inputStr.length} total characters]`);
-                } else {
-                    lines.push(`Input: ${inputStr}`);
-                }
+                const truncatedInput = this.truncateIfNeeded(inputStr, 'tool input');
+                lines.push('Input:');
+                lines.push(...truncatedInput);
                 break;
 
             case 'tool_result':
@@ -268,13 +479,30 @@ class MessageFormatter {
                     lines.push(`Status: ERROR`);
                 }
 
-                const resultStr = block.text || 'null';
-                if (this.options.truncateTools && resultStr.length > this.options.maxToolLength) {
-                    lines.push(resultStr.substring(0, this.options.maxToolLength) + '...');
-                    lines.push(`[Truncated - ${resultStr.length} total characters]`);
-                } else {
-                    lines.push(resultStr);
+                // Show indicator if result contains multiple content blocks
+                if (block.hasMultipleBlocks) {
+                    lines.push(`Content: Multiple blocks (separated below)`);
                 }
+                if (block.hasNonTextBlocks) {
+                    lines.push(`Note: Contains non-text content (images, etc.)`);
+                }
+
+                // Try to pretty-print JSON for better readability
+                let resultStr = block.text || 'null';
+                resultStr = this.tryPrettyPrintJson(resultStr);
+
+                // Apply truncation to tool results
+                lines.push(...this.truncateIfNeeded(resultStr, 'tool result'));
+                break;
+
+            case 'parse_error':
+                const lineInfo = block.lineNumber ? `Line ${block.lineNumber}` : 'Unknown line';
+                lines.push(`${lineInfo}: Failed to parse JSONL`);
+                lines.push(`Error: ${block.error}`);
+                lines.push(`Preview: ${block.preview}...`);
+                lines.push('');
+                lines.push('⚠️  This line contains corrupt data and cannot be displayed.');
+                lines.push('    The transcript may be incomplete.');
                 break;
         }
 
@@ -282,17 +510,30 @@ class MessageFormatter {
     }
 
     getBlockLabel(block) {
+        // Simple label mappings
+        const simpleLabels = {
+            thinking: 'THINKING',
+            text: 'CLAUDE',
+            human: 'HUMAN',
+            summary: 'SUMMARY',
+            parse_error: 'PARSE ERROR',
+        };
+
+        // Check for simple cases first
+        if (simpleLabels[block.type]) {
+            return simpleLabels[block.type];
+        }
+
+        // Handle complex cases with conditional logic
         switch (block.type) {
-            case 'thinking': return 'THINKING';
-            case 'text': return 'CLAUDE';
-            case 'human': return 'HUMAN';
             case 'tool_call':
                 return block.isSubAgent ? 'SUB-AGENT CALL' : 'TOOL_CALL';
             case 'tool_result':
                 return block.isError ? 'TOOL_ERROR' : 'TOOL_RESULT';
-            case 'system': return `SYSTEM (${block.level || 'info'})`;
-            case 'summary': return 'SUMMARY';
-            default: return block.type.toUpperCase();
+            case 'system':
+                return `SYSTEM (${block.level || 'info'})`;
+            default:
+                return block.type.toUpperCase();
         }
     }
 }
@@ -302,6 +543,12 @@ class MessageFormatter {
 // ================================================================================
 
 class MetadataExtractor {
+    /**
+     * Extract metadata from transcript file
+     * @param {string} filePath - Path to JSONL transcript file
+     * @returns {Promise<Object>} Metadata object with sessionId, projectPath, timestamp, counts
+     * @throws {Error} If file cannot be read or stream errors occur
+     */
     static async extract(filePath) {
         const metadata = {
             sessionId: null,
@@ -319,13 +566,21 @@ class MetadataExtractor {
                 crlfDelay: Infinity,
             });
 
-            let firstMessage = true;
+            // Cleanup function to close all resources
+            const cleanup = () => {
+                rl.close();
+                stream.destroy();
+            };
+
+            let metadataExtracted = false;
+            let lineNumber = 0;
 
             rl.on('line', (line) => {
-                const message = MessageParser.parseLine(line);
-                if (!message) return;
+                lineNumber++;
+                const message = MessageParser.parseLine(line, lineNumber);
 
-                // Skip file-history-snapshot and other non-message types
+                // Only process user, assistant, and system messages
+                // (skips parse errors, file-history-snapshot, summary, etc.)
                 if (!['user', 'assistant', 'system'].includes(message.type)) {
                     return;
                 }
@@ -333,11 +588,11 @@ class MetadataExtractor {
                 metadata.messageCount++;
 
                 // Extract from first real message
-                if (firstMessage && message.sessionId) {
+                if (!metadataExtracted && message.sessionId) {
                     metadata.sessionId = message.sessionId;
                     metadata.timestamp = message.timestamp;
                     metadata.projectPath = message.cwd;
-                    firstMessage = false;
+                    metadataExtracted = true;
                 }
 
                 // Count tool calls
@@ -346,7 +601,7 @@ class MetadataExtractor {
                     for (const block of content) {
                         if (block.type === 'tool_use') {
                             metadata.toolCallCount++;
-                            if (block.name === 'Task' || block.name?.includes('agent')) {
+                            if (MessageParser.isSubAgent(block.name)) {
                                 metadata.hasSubAgents = true;
                             }
                         }
@@ -354,23 +609,41 @@ class MetadataExtractor {
                 }
             });
 
-            rl.on('close', () => resolve(metadata));
-            rl.on('error', reject);
+            rl.on('close', () => {
+                cleanup();
+                resolve(metadata);
+            });
+
+            rl.on('error', (error) => {
+                cleanup();
+                reject(error);
+            });
+
+            // Also handle stream errors
+            stream.on('error', (error) => {
+                cleanup();
+                reject(error);
+            });
         });
     }
 
+    /**
+     * Format metadata as human-readable string
+     * @param {Object} metadata - Metadata object from extract()
+     * @returns {string} Formatted metadata display with session info and counts
+     */
     static format(metadata) {
         const lines = [
             '',
             `${EMOJI.metadata} SESSION METADATA`,
-            '═'.repeat(60),
+            DISPLAY.metadataSeparator,
             `Session ID:     ${metadata.sessionId || 'unknown'}`,
             `Project Path:   ${metadata.projectPath || 'unknown'}`,
             `Started:        ${metadata.timestamp ? new Date(metadata.timestamp).toLocaleString() : 'unknown'}`,
             `Messages:       ${metadata.messageCount}`,
             `Tool Calls:     ${metadata.toolCallCount}`,
             `Has Sub-Agents: ${metadata.hasSubAgents ? 'Yes' : 'No'}`,
-            '═'.repeat(60),
+            DISPLAY.metadataSeparator,
             '',
         ];
         return lines.join('\n');
@@ -387,6 +660,12 @@ class TranscriptProcessor {
         this.formatter = new MessageFormatter(this.options);
     }
 
+    /**
+     * Process transcript file and output formatted messages
+     * @param {string} filePath - Path to JSONL transcript file
+     * @returns {Promise<void>} Resolves when processing is complete
+     * @throws {Error} If file cannot be read, parse errors occur, or stream fails
+     */
     async process(filePath) {
         // Display metadata if requested
         if (this.options.showMetadata) {
@@ -402,18 +681,41 @@ class TranscriptProcessor {
                 crlfDelay: Infinity,
             });
 
-            rl.on('line', (line) => {
-                const message = MessageParser.parseLine(line);
-                if (!message) return;
+            // Cleanup function to close all resources
+            const cleanup = () => {
+                rl.close();
+                stream.destroy();
+            };
 
+            // Track line number for error reporting
+            let lineNumber = 0;
+
+            rl.on('line', (line) => {
+                lineNumber++;
+                const message = MessageParser.parseLine(line, lineNumber);
+
+                // Always format the message (including parse errors)
                 const formatted = this.formatter.format(message);
                 if (formatted) {
                     console.log(formatted);
                 }
             });
 
-            rl.on('close', resolve);
-            rl.on('error', reject);
+            rl.on('close', () => {
+                cleanup();
+                resolve();
+            });
+
+            rl.on('error', (error) => {
+                cleanup();
+                reject(error);
+            });
+
+            // Also handle stream errors
+            stream.on('error', (error) => {
+                cleanup();
+                reject(error);
+            });
         });
     }
 }
@@ -437,12 +739,13 @@ class CLI {
         for (let i = 0; i < args.length; i++) {
             const arg = args[i];
 
+            // Handle help flags
+            if (['-h', '--help'].includes(arg)) {
+                this.showHelp();
+                process.exit(0);
+            }
+
             switch (arg) {
-                case '-h':
-                case '--help':
-                    this.showHelp();
-                    process.exit(0);
-                    break;
 
                 case '--no-thinking':
                     options.showThinking = false;
@@ -463,7 +766,14 @@ class CLI {
 
                 case '--max-length':
                     i++;
-                    options.maxToolLength = parseInt(args[i], 10);
+                    const maxLength = parseInt(args[i], 10);
+                    if (isNaN(maxLength) || maxLength <= 0) {
+                        console.error(`Error: --max-length must be a positive number`);
+                        console.error(`Got: "${args[i]}"`);
+                        console.error(`Example: --max-length 1000`);
+                        process.exit(1);
+                    }
+                    options.maxToolLength = maxLength;
                     break;
 
                 // TODO: Implement --format option
@@ -525,19 +835,60 @@ NOTES:
     }
 
     static async findTranscriptFile(sessionId) {
-        // Try to find the transcript file for this session ID
+        // Validate session ID to prevent command injection
+        // Only allow alphanumeric characters, hyphens, and underscores
+        const validSessionIdPattern = /^[a-zA-Z0-9_-]+$/;
+        if (!validSessionIdPattern.test(sessionId)) {
+            throw new Error(
+                `Invalid session ID format: "${sessionId}"\n` +
+                `Session IDs must contain only letters, numbers, hyphens, and underscores.`
+            );
+        }
+
+        // Check if projects directory exists before searching
         const homeDir = os.homedir();
         const projectsDir = path.join(homeDir, '.claude', 'projects');
 
-        return new Promise((resolve) => {
-            const { exec } = require('child_process');
-            exec(`find "${projectsDir}" -name "${sessionId}.jsonl" 2>/dev/null | head -1`,
-                (error, stdout) => {
-                    const found = stdout.trim();
-                    resolve(found || null);
-                }
+        if (!fs.existsSync(projectsDir)) {
+            throw new Error(
+                `Claude Code projects directory not found: ${projectsDir}\n` +
+                `Please ensure Claude Code is installed and has been run at least once.`
             );
-        });
+        }
+
+        // Search for the transcript file using promisified exec
+        try {
+            const { stdout, stderr } = await execAsync(
+                `find "${projectsDir}" -name "${sessionId}.jsonl" 2>&1 | head -1`,
+                { timeout: 30000 }  // 30 second timeout
+            );
+
+            // Check if stderr contains permission errors
+            if (stderr && stderr.includes('Permission denied')) {
+                throw new Error(
+                    `Permission denied while searching for transcripts.\n` +
+                    `Check file permissions on: ${projectsDir}`
+                );
+            }
+
+            // Return found path or null if not found
+            return stdout.trim() || null;
+        } catch (error) {
+            // Distinguish timeout from other errors
+            if (error.killed) {
+                throw new Error(
+                    `Transcript search timed out after 30 seconds.\n` +
+                    `The projects directory may be too large: ${projectsDir}`
+                );
+            }
+
+            // Other execution errors
+            throw new Error(
+                `Failed to search for transcript file.\n` +
+                `Error: ${error.message}\n` +
+                `Directory: ${projectsDir}`
+            );
+        }
     }
 }
 
@@ -550,27 +901,70 @@ async function main() {
 
     let transcriptPath = inputPath;
 
-    // Determine if input is a file or session ID
-    if (!fs.existsSync(inputPath)) {
-        // Try to find transcript by session ID
-        console.log(`Looking for transcript with session ID: ${inputPath}`);
-        transcriptPath = await CLI.findTranscriptFile(inputPath);
+    try {
+        // Determine if input looks like a file path or session ID
+        // Heuristic: if it contains path separators or file extension, treat as file path
+        const looksLikeFilePath = inputPath.includes('/') ||
+                                   inputPath.includes('\\') ||
+                                   inputPath.endsWith('.jsonl');
 
-        if (!transcriptPath) {
-            console.error(`Error: Could not find transcript for session ${inputPath}`);
-            console.error('Please provide a valid session ID or path to .jsonl file');
+        if (looksLikeFilePath) {
+            // Treat as file path - validate it exists first
+            // Using async access() reduces (but doesn't eliminate) race window vs existsSync()
+            try {
+                await fs.promises.access(transcriptPath, fs.constants.R_OK);
+            } catch (accessError) {
+                if (accessError.code === 'ENOENT') {
+                    throw Object.assign(new Error(`File not found: ${transcriptPath}`), { code: 'ENOENT' });
+                } else if (accessError.code === 'EACCES') {
+                    throw Object.assign(new Error(`Permission denied: ${transcriptPath}`), { code: 'EACCES' });
+                }
+                throw accessError;
+            }
+
+            console.log(`=== Parsing: ${transcriptPath} ===\n`);
+            const processor = new TranscriptProcessor(options);
+            await processor.process(transcriptPath);
+        } else {
+            // Treat as session ID - look up the file
+            console.log(`Looking for transcript with session ID: ${inputPath}`);
+            transcriptPath = await CLI.findTranscriptFile(inputPath);
+
+            if (!transcriptPath) {
+                console.error(`Error: Could not find transcript for session ${inputPath}`);
+                console.error('Please provide a valid session ID or path to .jsonl file');
+                process.exit(1);
+            }
+
+            console.log(`=== Parsing: ${transcriptPath} ===\n`);
+            const processor = new TranscriptProcessor(options);
+            await processor.process(transcriptPath);
+        }
+    } catch (error) {
+        // Distinguish different error types for better user experience
+        if (error.code === 'ENOENT') {
+            console.error(`Error: File not found: ${transcriptPath}`);
+            console.error('Please check the path and try again.');
+            process.exit(1);
+        } else if (error.code === 'EACCES') {
+            console.error(`Error: Permission denied: ${transcriptPath}`);
+            console.error('Please check file permissions and try again.');
+            process.exit(1);
+        } else if (error.message && error.message.includes('parse')) {
+            console.error(`Error: Failed to parse transcript file`);
+            console.error(error.message);
+            console.error('\nThe transcript file may be corrupt.');
+            process.exit(1);
+        } else {
+            // Generic error with full message
+            console.error('Error processing transcript:');
+            console.error(error.message);
+            if (process.env.DEBUG) {
+                console.error('\nStack trace:');
+                console.error(error.stack);
+            }
             process.exit(1);
         }
-    }
-
-    console.log(`=== Parsing: ${transcriptPath} ===\n`);
-
-    try {
-        const processor = new TranscriptProcessor(options);
-        await processor.process(transcriptPath);
-    } catch (error) {
-        console.error('Error processing transcript:', error.message);
-        process.exit(1);
     }
 }
 

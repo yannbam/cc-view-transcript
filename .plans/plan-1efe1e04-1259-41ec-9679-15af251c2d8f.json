@@ -6,325 +6,325 @@
     {
       "name": "Phase 1: Security & Critical Integrity",
       "details": "Address critical security vulnerabilities and CLAUDE.md principle violations that must be fixed before any production use.",
-      "status": "pending",
+      "status": "completed",
       "priority": "urgent",
       "sub_tasks": [
         {
           "name": "Fix command injection vulnerability",
           "details": "Location: cc-view-transcript.js:534\n\nUser-provided sessionId passed to shell without validation. Add input validation (regex: ^[a-zA-Z0-9_-]+$) or replace exec() with spawn() to prevent arbitrary command execution.\n\nSeverity: CRITICAL (Security)\nIssue #1 in REVIEW-FINDINGS.md",
-          "status": "pending",
+          "status": "completed",
           "priority": "urgent",
           "uuid": "6b31b0db-4cb9-438a-8b9f-1d146b7db63c",
           "created_at": "2025-11-22T04:46:04.788Z",
-          "updated_at": "2025-11-22T04:46:04.788Z"
+          "updated_at": "2025-11-22T04:59:45.287Z"
         },
         {
           "name": "Add stream resource cleanup",
           "details": "Location: cc-view-transcript.js:398-418, 315-360\n\nFile streams and readline interfaces never closed on error. Implement cleanup function called on both success and error paths to prevent file descriptor leaks.\n\nSeverity: CRITICAL (Resource Management)\nIssue #4 in REVIEW-FINDINGS.md",
-          "status": "pending",
+          "status": "completed",
           "priority": "urgent",
           "uuid": "9c10a859-d115-421c-910b-a97c452a7372",
           "created_at": "2025-11-22T04:46:04.788Z",
-          "updated_at": "2025-11-22T04:46:04.788Z"
+          "updated_at": "2025-11-22T05:00:43.855Z"
         },
         {
           "name": "Show indicators for filtered content",
           "details": "Location: cc-view-transcript.js:204-210\n\nViolates Display Integrity principle - content completely hidden when filters active. Replace filtered blocks with one-line indicators like '[THINKING BLOCK HIDDEN - remove --no-thinking to show]'.\n\nSeverity: CRITICAL (CLAUDE.md violation)\nIssue #2 in REVIEW-FINDINGS.md",
-          "status": "pending",
+          "status": "completed",
           "priority": "urgent",
           "uuid": "c61c2d93-1494-4aee-af77-78a5f07855da",
           "created_at": "2025-11-22T04:46:04.788Z",
-          "updated_at": "2025-11-22T04:46:04.788Z"
+          "updated_at": "2025-11-22T05:01:24.751Z"
         },
         {
           "name": "Show indicators for failed line parsing",
           "details": "Location: cc-view-transcript.js:405-412\n\nJSON parse errors cause silent line skipping. Display one-line replacement like '[!] Line N: Failed to parse message (corrupt JSONL)' so users know data is missing.\n\nSeverity: CRITICAL (Data Loss)\nIssue #3 in REVIEW-FINDINGS.md",
-          "status": "pending",
+          "status": "completed",
           "priority": "urgent",
           "uuid": "6a8f4d10-aa88-4ef5-87b9-a4ce4ee8c69a",
           "created_at": "2025-11-22T04:46:04.788Z",
-          "updated_at": "2025-11-22T04:46:04.788Z"
+          "updated_at": "2025-11-22T05:03:32.496Z"
         },
         {
           "name": "Report exec() errors properly",
           "details": "Location: cc-view-transcript.js:527-541\n\nfind command errors completely swallowed. Check if .claude/projects exists first, distinguish 'not found' from 'search failed', show actual errors to help users diagnose system issues.\n\nSeverity: CRITICAL (Error Handling)\nIssue #5 in REVIEW-FINDINGS.md",
-          "status": "pending",
+          "status": "completed",
           "priority": "urgent",
           "uuid": "84359af1-ac0a-453d-9698-af64530fe9ef",
           "created_at": "2025-11-22T04:46:04.788Z",
-          "updated_at": "2025-11-22T04:46:04.788Z"
+          "updated_at": "2025-11-22T05:04:18.684Z"
         }
       ],
       "uuid": "58006a44-31eb-446f-8385-c2e08ebf1a8b",
       "created_at": "2025-11-22T04:46:04.788Z",
       "updated_at": "2025-11-22T04:46:04.788Z",
-      "completion_percentage": 0
+      "completion_percentage": 100
     },
     {
       "name": "Phase 2: Display Completeness",
       "details": "Fix violations of Display Completeness principle and improve data extraction to show all available information.",
-      "status": "pending",
+      "status": "completed",
       "priority": "high",
       "sub_tasks": [
         {
           "name": "Extract ALL content blocks from tool results",
           "details": "Location: cc-view-transcript.js:141-145\n\nOnly first content block extracted from array results. MCP tools return multiple blocks. Extract all blocks, handle different types, separate visually.\n\nSeverity: HIGH (CLAUDE.md violation)\nIssue #6 in REVIEW-FINDINGS.md",
-          "status": "pending",
+          "status": "completed",
           "priority": "high",
           "uuid": "1b2e46f0-849f-42c9-bbd3-e300ab763e21",
           "created_at": "2025-11-22T04:46:04.788Z",
-          "updated_at": "2025-11-22T04:46:04.788Z"
+          "updated_at": "2025-11-22T05:05:31.444Z"
         },
         {
           "name": "Add JSON pretty-printing for tool results",
           "details": "Location: cc-view-transcript.js:271-277\n\nStructured tool results displayed as raw text. Detect JSON and apply pretty-printing with indentation for readability.\n\nSeverity: HIGH (User Experience)\nIssue #7 in REVIEW-FINDINGS.md",
-          "status": "pending",
+          "status": "completed",
           "priority": "high",
           "uuid": "ab955097-ddea-4cac-96a9-06dd12c1851b",
           "created_at": "2025-11-22T04:46:04.788Z",
-          "updated_at": "2025-11-22T04:46:04.788Z"
+          "updated_at": "2025-11-22T05:06:24.341Z"
         },
         {
           "name": "Apply truncation to all text types",
           "details": "Location: cc-view-transcript.js:257-262, 272-275\n\n--truncate only affects tool I/O. Thinking blocks and text can still be 100KB+. Apply truncation consistently to all text content types.\n\nSeverity: HIGH (Scope Limitation)\nIssue #8 in REVIEW-FINDINGS.md",
-          "status": "pending",
+          "status": "completed",
           "priority": "high",
           "uuid": "fba44b50-fd88-48ae-a423-49b86eddfa88",
           "created_at": "2025-11-22T04:46:04.788Z",
-          "updated_at": "2025-11-22T04:46:04.788Z"
+          "updated_at": "2025-11-22T05:07:27.793Z"
         }
       ],
       "uuid": "59d50fd8-86b5-4f35-961d-280c2c97f52e",
       "created_at": "2025-11-22T04:46:04.788Z",
       "updated_at": "2025-11-22T04:46:04.788Z",
-      "completion_percentage": 0
+      "completion_percentage": 100
     },
     {
       "name": "Phase 3: Error Handling & UX",
       "details": "Improve error messages, input validation, and general user experience when things go wrong.",
-      "status": "pending",
+      "status": "completed",
       "priority": "high",
       "sub_tasks": [
         {
           "name": "Add line numbers to parse errors",
           "details": "Location: cc-view-transcript.js:52-59\n\nParse errors show no line number or preview. Pass line number to parseLine(), show in error message, show preview of corrupt line.\n\nSeverity: HIGH (Debugging)\nIssue #10 in REVIEW-FINDINGS.md",
-          "status": "pending",
+          "status": "completed",
           "priority": "high",
           "uuid": "b02b2b40-d71d-4787-b10f-aa558f78801a",
           "created_at": "2025-11-22T04:46:04.788Z",
-          "updated_at": "2025-11-22T04:46:04.788Z"
+          "updated_at": "2025-11-22T05:07:58.388Z"
         },
         {
           "name": "Distinguish error types in main",
           "details": "Location: cc-view-transcript.js:568-574\n\nAll errors shown as generic 'Error processing transcript'. Distinguish ENOENT, EACCES, parse errors with specific messages.\n\nSeverity: MEDIUM (User Experience)\nIssue #17 in REVIEW-FINDINGS.md",
-          "status": "pending",
+          "status": "completed",
           "priority": "medium",
           "uuid": "643dda83-f136-4465-816f-89782a0ce0d5",
           "created_at": "2025-11-22T04:46:04.788Z",
-          "updated_at": "2025-11-22T04:46:04.788Z"
+          "updated_at": "2025-11-22T05:08:39.661Z"
         },
         {
           "name": "Add parseInt validation",
           "details": "Location: cc-view-transcript.js:464-467\n\nNo validation that --max-length receives valid number. Check for isNaN() and positive number, show clear error.\n\nSeverity: MEDIUM (Input Validation)\nIssue #18 in REVIEW-FINDINGS.md",
-          "status": "pending",
+          "status": "completed",
           "priority": "medium",
           "uuid": "cdb51f6b-df65-44cf-996d-5f0b11dedbfd",
           "created_at": "2025-11-22T04:46:04.789Z",
-          "updated_at": "2025-11-22T04:46:04.789Z"
+          "updated_at": "2025-11-22T05:09:04.506Z"
         },
         {
           "name": "Move imports to top level",
           "details": "Location: cc-view-transcript.js:533\n\nrequire('child_process') inside function. Move to top-level imports for consistency.\n\nSeverity: MEDIUM (Code Organization)\nIssue #9 in REVIEW-FINDINGS.md",
-          "status": "pending",
+          "status": "completed",
           "priority": "medium",
           "uuid": "c2d5e9c2-8f1c-4c8c-920b-598bb2b16ef1",
           "created_at": "2025-11-22T04:46:04.789Z",
-          "updated_at": "2025-11-22T04:46:04.789Z"
+          "updated_at": "2025-11-22T05:09:23.341Z"
         },
         {
           "name": "Fix file existence race condition",
           "details": "Location: cc-view-transcript.js:554-564\n\nFile checked for existence then later opened. Just attempt to open and handle ENOENT/EACCES errors specifically.\n\nSeverity: MEDIUM (Edge Case)\nIssue #16 in REVIEW-FINDINGS.md",
-          "status": "pending",
+          "status": "completed",
           "priority": "medium",
           "uuid": "1ee73744-b160-4d64-8c29-e73602ae2fea",
           "created_at": "2025-11-22T04:46:04.789Z",
-          "updated_at": "2025-11-22T04:46:04.789Z"
+          "updated_at": "2025-11-22T05:17:33.842Z"
         }
       ],
       "uuid": "7763f33f-fe91-45d3-b6a3-45ac7604ed0e",
       "created_at": "2025-11-22T04:46:04.788Z",
       "updated_at": "2025-11-22T04:46:04.788Z",
-      "completion_percentage": 0
+      "completion_percentage": 100
     },
     {
       "name": "Phase 4: Documentation",
       "details": "Fix misleading comments, add missing documentation, acknowledge known limitations.",
-      "status": "pending",
+      "status": "completed",
       "priority": "medium",
       "sub_tasks": [
         {
           "name": "Fix misleading filter comment",
           "details": "Location: cc-view-transcript.js:328-329\n\nComment says 'Skip file-history-snapshot' but code implements inclusion filter. Rewrite to 'Only process user, assistant, and system messages'.\n\nSeverity: MEDIUM (Code Clarity)\nIssue #11 in REVIEW-FINDINGS.md",
-          "status": "pending",
+          "status": "completed",
           "priority": "medium",
           "uuid": "e9bd336e-659d-4dae-82db-cfb3d4d1df87",
           "created_at": "2025-11-22T04:46:04.789Z",
-          "updated_at": "2025-11-22T04:46:04.789Z"
+          "updated_at": "2025-11-22T05:18:11.185Z"
         },
         {
           "name": "Document incomplete extraction",
           "details": "Location: cc-view-transcript.js:139-145\n\nComment doesn't mention only first block extracted. Add TODO noting Display Completeness violation, warn about MCP multi-block results.\n\nSeverity: MEDIUM (Documentation)\nIssue #12 in REVIEW-FINDINGS.md",
-          "status": "pending",
+          "status": "completed",
           "priority": "medium",
           "uuid": "558a4eb3-3c57-47e5-b6f1-df10b99f9f8c",
           "created_at": "2025-11-22T04:46:04.789Z",
-          "updated_at": "2025-11-22T04:46:04.789Z"
+          "updated_at": "2025-11-22T05:18:25.184Z"
         },
         {
           "name": "Document truncation scope",
           "details": "Location: cc-view-transcript.js:257-262, 272-277\n\nNo comment that truncation only affects tool I/O. Add comment explaining scope limitation.\n\nSeverity: MEDIUM (Documentation)\nIssue #13 in REVIEW-FINDINGS.md",
-          "status": "pending",
+          "status": "completed",
           "priority": "medium",
           "uuid": "9291e2ee-6329-4a1a-9dfa-471d09e54eb2",
           "created_at": "2025-11-22T04:46:04.789Z",
-          "updated_at": "2025-11-22T04:46:04.789Z"
+          "updated_at": "2025-11-22T05:18:48.477Z"
         },
         {
           "name": "Document filtering violations",
           "details": "Location: cc-view-transcript.js:215-228\n\nNo comment that filtering violates Display Integrity. Add TODO acknowledging CLAUDE.md violation.\n\nSeverity: MEDIUM (Documentation)\nIssue #14 in REVIEW-FINDINGS.md",
-          "status": "pending",
+          "status": "completed",
           "priority": "medium",
           "uuid": "7d17d60f-4a73-418b-8d7c-a52c746a55da",
           "created_at": "2025-11-22T04:46:04.789Z",
-          "updated_at": "2025-11-22T04:46:04.789Z"
+          "updated_at": "2025-11-22T05:19:07.490Z"
         },
         {
           "name": "Add complete JSDoc",
           "details": "Location: Lines 52, 64, 198, 230, 305, 362, 390, 426\n\nMost public methods missing complete JSDoc. Add @param, @returns, error case documentation for all public methods.\n\nSeverity: MEDIUM (Documentation Debt)\nIssue #15 in REVIEW-FINDINGS.md",
-          "status": "pending",
+          "status": "completed",
           "priority": "medium",
           "uuid": "01261863-c75c-4380-bfae-638a110fa395",
           "created_at": "2025-11-22T04:46:04.789Z",
-          "updated_at": "2025-11-22T04:46:04.789Z"
+          "updated_at": "2025-11-22T05:20:36.411Z"
         }
       ],
       "uuid": "6bb2dd26-11ac-487e-b228-86d58523de08",
       "created_at": "2025-11-22T04:46:04.789Z",
       "updated_at": "2025-11-22T04:46:04.789Z",
-      "completion_percentage": 0
+      "completion_percentage": 100
     },
     {
       "name": "Phase 5: Code Quality",
       "details": "Implement simplification suggestions to improve code clarity and maintainability.",
-      "status": "pending",
+      "status": "completed",
       "priority": "low",
       "sub_tasks": [
         {
           "name": "Extract duplicate truncation logic",
           "details": "Location: cc-view-transcript.js:257-262, 272-277\n\nNearly identical truncation code appears twice. Extract to helper method truncateIfNeeded().\n\nSeverity: LOW (Code Quality)\nIssue #19 in REVIEW-FINDINGS.md",
-          "status": "pending",
+          "status": "completed",
           "priority": "low",
           "uuid": "23c32154-d0ec-4449-93a3-c6fe2f2b5618",
           "created_at": "2025-11-22T04:46:04.789Z",
-          "updated_at": "2025-11-22T04:46:04.789Z"
+          "updated_at": "2025-11-22T05:21:09.005Z"
         },
         {
           "name": "Extract sub-agent detection logic",
           "details": "Location: Lines 113, 349\n\nSame detection logic appears twice. Create static helper MessageParser.isSubAgent().\n\nSeverity: LOW (Code Quality)\nIssue #20 in REVIEW-FINDINGS.md",
-          "status": "pending",
+          "status": "completed",
           "priority": "low",
           "uuid": "2611bf4b-1d15-4e7d-a3d3-7994b7712e76",
           "created_at": "2025-11-22T04:46:04.789Z",
-          "updated_at": "2025-11-22T04:46:04.789Z"
+          "updated_at": "2025-11-22T05:21:43.367Z"
         },
         {
           "name": "Simplify result text extraction",
           "details": "Location: cc-view-transcript.js:139-145\n\nNested if/else harder to read. Extract to helper extractResultText().\n\nSeverity: LOW (Code Quality)\nIssue #21 in REVIEW-FINDINGS.md",
-          "status": "pending",
+          "status": "completed",
           "priority": "low",
           "uuid": "30dfcb94-9796-44a8-91f4-07b285d6b60a",
           "created_at": "2025-11-22T04:46:04.789Z",
-          "updated_at": "2025-11-22T04:46:04.789Z"
+          "updated_at": "2025-11-22T05:22:30.948Z"
         },
         {
           "name": "Simplify error detection",
           "details": "Location: cc-view-transcript.js:135-137\n\nThree-way OR check verbose. Simplify to: const isError = !!(message.toolUseResult?.is_error || block.is_error);\n\nSeverity: LOW (Code Quality)\nIssue #22 in REVIEW-FINDINGS.md",
-          "status": "pending",
+          "status": "completed",
           "priority": "low",
           "uuid": "ec7566e5-8e07-4608-be5d-6924f7678418",
           "created_at": "2025-11-22T04:46:04.789Z",
-          "updated_at": "2025-11-22T04:46:04.789Z"
+          "updated_at": "2025-11-22T05:22:38.256Z"
         },
         {
           "name": "Use consistent separator widths",
           "details": "Location: Lines 192, 366\n\nMagic numbers for separator widths inconsistent. Define DISPLAY constants at top.\n\nSeverity: LOW (Code Quality)\nIssue #23 in REVIEW-FINDINGS.md",
-          "status": "pending",
+          "status": "completed",
           "priority": "low",
           "uuid": "091cf78b-44b2-4f31-984b-a01480fbda0e",
           "created_at": "2025-11-22T04:46:04.789Z",
-          "updated_at": "2025-11-22T04:46:04.789Z"
+          "updated_at": "2025-11-22T05:23:07.525Z"
         },
         {
           "name": "Simplify getBlockLabel() switch",
           "details": "Location: cc-view-transcript.js:284-297\n\nLong switch for simple mappings. Use object lookup for simple cases.\n\nSeverity: LOW (Code Quality)\nIssue #24 in REVIEW-FINDINGS.md",
-          "status": "pending",
+          "status": "completed",
           "priority": "low",
           "uuid": "4f251dbd-61a7-4e59-8c32-9f9baa69fd82",
           "created_at": "2025-11-22T04:46:04.789Z",
-          "updated_at": "2025-11-22T04:46:04.789Z"
+          "updated_at": "2025-11-22T05:23:35.471Z"
         },
         {
           "name": "Remove redundant null check",
           "details": "Location: cc-view-transcript.js:67\n\nCheck if (!message) before switch is redundant. Remove, let switch handle naturally.\n\nSeverity: LOW (Code Quality)\nIssue #25 in REVIEW-FINDINGS.md",
-          "status": "pending",
+          "status": "completed",
           "priority": "low",
           "uuid": "460211a4-c283-4d5d-9e4c-770e50c06e29",
           "created_at": "2025-11-22T04:46:04.789Z",
-          "updated_at": "2025-11-22T04:46:04.789Z"
+          "updated_at": "2025-11-22T05:23:55.784Z"
         },
         {
           "name": "Improve variable naming",
           "details": "Location: cc-view-transcript.js:322\n\nfirstMessage boolean flag name confusing. Rename to metadataExtracted or needsMetadata.\n\nSeverity: LOW (Code Clarity)\nIssue #26 in REVIEW-FINDINGS.md",
-          "status": "pending",
+          "status": "completed",
           "priority": "low",
           "uuid": "7c2a69f6-cbbe-4c97-a7df-2470ecad563e",
           "created_at": "2025-11-22T04:46:04.789Z",
-          "updated_at": "2025-11-22T04:46:04.789Z"
+          "updated_at": "2025-11-22T05:24:14.325Z"
         },
         {
           "name": "Modernize Promise pattern",
           "details": "Location: cc-view-transcript.js:532-540\n\nManual Promise wrapper around exec() is old-style. Use util.promisify() for cleaner code.\n\nSeverity: LOW (Code Quality)\nIssue #27 in REVIEW-FINDINGS.md",
-          "status": "pending",
+          "status": "completed",
           "priority": "low",
           "uuid": "ad4e2db5-26f2-4a4c-b26e-f889392212a8",
           "created_at": "2025-11-22T04:46:04.789Z",
-          "updated_at": "2025-11-22T04:46:04.789Z"
+          "updated_at": "2025-11-22T05:24:48.251Z"
         },
         {
           "name": "Simplify switch fallthrough",
           "details": "Location: cc-view-transcript.js:241-247\n\nMultiple cases falling through harder to read. Define textTypes array and use includes().\n\nSeverity: LOW (Code Clarity)\nIssue #28 in REVIEW-FINDINGS.md",
-          "status": "pending",
+          "status": "completed",
           "priority": "low",
           "uuid": "37345ca0-8942-4389-8ec4-452e79e40dd5",
           "created_at": "2025-11-22T04:46:04.789Z",
-          "updated_at": "2025-11-22T04:46:04.789Z"
+          "updated_at": "2025-11-22T05:25:37.195Z"
         },
         {
           "name": "Remove redundant comment",
           "details": "Location: cc-view-transcript.js:69\n\nComment 'Handle different message types' before switch is self-evident. Remove.\n\nSeverity: LOW (Code Clarity)\nIssue #29 in REVIEW-FINDINGS.md",
-          "status": "pending",
+          "status": "completed",
           "priority": "low",
           "uuid": "b1262ce2-8817-4c23-855e-12bc36124f35",
           "created_at": "2025-11-22T04:46:04.789Z",
-          "updated_at": "2025-11-22T04:46:04.789Z"
+          "updated_at": "2025-11-22T05:25:57.815Z"
         }
       ],
       "uuid": "43e3710f-0e14-4f17-aab4-c7e5f7c8fc91",
       "created_at": "2025-11-22T04:46:04.789Z",
       "updated_at": "2025-11-22T04:46:04.789Z",
-      "completion_percentage": 0
+      "completion_percentage": 100
     }
   ],
   "created_at": "2025-11-22T04:46:04.789Z",
-  "updated_at": "2025-11-22T04:46:12.216Z"
+  "updated_at": "2025-11-22T05:26:21.455Z"
 }
