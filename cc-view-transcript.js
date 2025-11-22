@@ -308,6 +308,9 @@ class MessageFormatter {
     constructor(options = {}) {
         this.options = { ...DEFAULT_OPTIONS, ...options };
         this.separator = DISPLAY.blockSeparator;
+        // Track tool calls to match them with results
+        // Maps tool_use_id -> tool_name
+        this.toolCallMap = new Map();
     }
 
     /**
@@ -316,6 +319,17 @@ class MessageFormatter {
      * @returns {string} Formatted message as string with headers, content, and separators
      */
     format(message) {
+        // Track tool calls from assistant messages before formatting
+        if (message.type === 'assistant') {
+            const messageContent = message.message?.content || [];
+            for (const block of messageContent) {
+                if (block.type === 'tool_use') {
+                    // Store mapping: tool_use_id -> tool_name
+                    this.toolCallMap.set(block.id, block.name);
+                }
+            }
+        }
+
         const content = MessageParser.extractContent(message);
         const output = [];
 
@@ -355,23 +369,25 @@ class MessageFormatter {
     }
 
     formatFilteredIndicator(block) {
-        // Return one-line indicator showing what's hidden and how to show it
+        // Return one-line indicator showing what's hidden
         // This maintains Display Integrity principle - content is never silently removed
         const lines = [''];
 
         switch (block.type) {
             case 'thinking':
-                lines.push(`${block.emoji} [THINKING BLOCK HIDDEN - remove --no-thinking to show]`);
+                lines.push(`● ${block.emoji} [THINKING BLOCK HIDDEN]`);
                 break;
             case 'tool_call':
-                lines.push(`${block.emoji} [TOOL CALL HIDDEN: ${block.name} - remove --no-tools to show]`);
+                lines.push(`● ${block.emoji} [TOOL CALL HIDDEN: ${block.name}]`);
                 break;
             case 'tool_result':
                 const status = block.isError ? 'ERROR' : 'SUCCESS';
-                lines.push(`${block.emoji} [TOOL RESULT HIDDEN (${status}) - remove --no-tools to show]`);
+                // Look up tool name from the tool call map
+                const toolName = this.toolCallMap.get(block.id) || 'Unknown';
+                lines.push(`● ${block.emoji} [TOOL RESULT HIDDEN (${status}): ${toolName}]`);
                 break;
             case 'system':
-                lines.push(`${block.emoji} [SYSTEM MESSAGE HIDDEN - use --show-system to show]`);
+                lines.push(`● ${block.emoji} [SYSTEM MESSAGE HIDDEN]`);
                 break;
             default:
                 return null;
@@ -426,11 +442,11 @@ class MessageFormatter {
     formatBlock(block, message) {
         const lines = [];
 
-        // Add header
+        // Add header with separator above and colon after label
         const prefix = block.type === 'human' ? '' : '● ';
         lines.push('');
-        lines.push(`${prefix}${block.emoji} ${this.getBlockLabel(block)}`);
         lines.push(this.separator);
+        lines.push(`${prefix}${block.emoji} ${this.getBlockLabel(block)}:`);
 
         // Add content based on type
         switch (block.type) {
@@ -474,6 +490,9 @@ class MessageFormatter {
                 break;
 
             case 'tool_result':
+                // Look up tool name from the tool call map
+                const resultToolName = this.toolCallMap.get(block.id) || 'Unknown';
+                lines.push(`Tool: ${resultToolName}`);
                 lines.push(`ID: ${block.id}`);
                 if (block.isError) {
                     lines.push(`Status: ERROR`);
