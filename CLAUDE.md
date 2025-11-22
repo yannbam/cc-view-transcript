@@ -47,30 +47,38 @@ Full Claude Code session JSONL schema:
 - Add TODO comments for incomplete features
 - Remove or comment out unimplemented options
 
+**Display Integrity:**
+- NEVER remove content from display without indicating something is hidden
+- When filtering/hiding content, always show a one-line replacement
+- Make it clear what's being hidden and why
+- User should always know the full scope of the transcript
+
 ## Features to Implement
 
+**Next Up (Current Issues):**
+- [ ] Fix --truncate to apply to ALL message types, not just tools
+- [ ] Fix --no-thinking: show one-line replacement instead of hiding completely
+- [ ] Fix --no-tools: show one-line summary (tool name + success/failure) instead of hiding
+
 **Phase 2 - UX Improvements:**
+- [ ] Add message index
 - [ ] Pagination for large sessions
-- [ ] Table of contents / overview mode
-- [ ] Search/filter within transcript
+- [ ] Overview mode
 - [ ] Jump to specific message by index/ID
 
 **Phase 3 - Advanced Parsing:**
-- [ ] Sub-agent transcript parsing (recursive)
+- [ ] Sub-agent transcript parsing
 - [ ] Extract and display sub-agent conversations inline
-- [ ] Show sub-agent metadata and nesting levels
 
 **Phase 4 - Output Formats:**
-- [ ] Compact mode (minimal details)
-- [ ] Minimal mode (conversation only, no tools)
+- [ ] Compact mode
+- [ ] Minimal mode
 - [ ] JSON output mode (structured data)
 - [ ] Markdown export
 
 **Maybe Later:**
 - [ ] Colorized output (terminal colors)
 - [ ] Interactive mode (TUI)
-- [ ] Stats/analytics mode
-- [ ] Diff between two sessions
 
 ## Current Status
 
