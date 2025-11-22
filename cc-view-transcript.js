@@ -442,11 +442,12 @@ class MessageFormatter {
     formatBlock(block, message) {
         const lines = [];
 
-        // Add header with separator above and colon after label
+        // Add header with blank lines above and below for breathing room
         const prefix = block.type === 'human' ? '' : '● ';
         lines.push('');
         lines.push(this.separator);
         lines.push(`${prefix}${block.emoji} ${this.getBlockLabel(block)}:`);
+        lines.push('');
 
         // Add content based on type
         switch (block.type) {
