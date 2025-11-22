@@ -108,7 +108,8 @@ class MessageParser {
                         id: block.id,
                         input: block.input,
                         emoji: EMOJI.toolCall,
-                        // Check if this is a sub-agent call
+                        // TODO: Implement sub-agent transcript parsing
+                        // Need to recursively parse tool results that contain nested transcripts
                         isSubAgent: block.name === 'Task' || block.name?.includes('agent'),
                     });
                     break;
@@ -518,7 +519,7 @@ EXAMPLES:
 NOTES:
     - By default, shows all content including thinking, tools, and metadata
     - Automatically finds transcript files when given a session ID
-    - Supports sub-agent transcript display
+    - TODO: Sub-agent transcript parsing not yet implemented
 `;
         console.log(help);
     }
