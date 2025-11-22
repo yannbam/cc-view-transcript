@@ -1,0 +1,12 @@
+# Claude Code runtime directories
+.claude/
+.claude-trace/
+
+# Node modules
+node_modules/
+
+# System files
+.DS_Store
+*.swp
+*.swo
+*~
