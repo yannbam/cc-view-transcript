@@ -25,7 +25,8 @@ const DEFAULT_OPTIONS = {
     showMetadata: true,
     truncateTools: false,
     maxToolLength: 500,
-    outputFormat: 'full', // full, compact, minimal
+    // TODO: Implement different output formats (full, compact, minimal)
+    // outputFormat: 'full',
 };
 
 const EMOJI = {
@@ -464,10 +465,11 @@ class CLI {
                     options.maxToolLength = parseInt(args[i], 10);
                     break;
 
-                case '--format':
-                    i++;
-                    options.outputFormat = args[i];
-                    break;
+                // TODO: Implement --format option
+                // case '--format':
+                //     i++;
+                //     options.outputFormat = args[i];
+                //     break;
 
                 case '--show-system':
                     options.showSystemMessages = true;
@@ -506,7 +508,6 @@ OPTIONS:
     --no-metadata        Hide session metadata
     --truncate           Truncate long tool inputs/outputs
     --max-length <n>     Maximum length for truncated content (default: 500)
-    --format <format>    Output format: full, compact, minimal (default: full)
     --show-system        Show system messages
 
 EXAMPLES:
