@@ -27,6 +27,7 @@ const DEFAULT_OPTIONS = {
     showToolResults: true,
     showSystemMessages: false,
     showMetadata: true,
+    showTimestamps: true,
     truncateTools: false,
     maxToolLength: 500,
     // TODO: Implement different output formats (full, compact, minimal)
@@ -46,7 +47,8 @@ const EMOJI = {
 };
 
 const DISPLAY = {
-    blockSeparator: '—'.repeat(40),
+    separatorWidth: 50,
+    blockSeparator: '—'.repeat(50),
     metadataSeparator: '═'.repeat(60),
 };
 
@@ -337,7 +339,7 @@ class MessageFormatter {
             // Check if content should be displayed in full or as indicator
             if (!this.shouldDisplay(block)) {
                 // Show one-line indicator for filtered content (Display Integrity principle)
-                const indicator = this.formatFilteredIndicator(block);
+                const indicator = this.formatFilteredIndicator(block, message);
                 if (indicator) {
                     output.push(indicator);
                 }
@@ -368,32 +370,43 @@ class MessageFormatter {
         }
     }
 
-    formatFilteredIndicator(block) {
+    formatFilteredIndicator(block, message) {
         // Return one-line indicator showing what's hidden
         // This maintains Display Integrity principle - content is never silently removed
-        const lines = [''];
 
+        // Build the indicator text
+        let indicatorText;
         switch (block.type) {
             case 'thinking':
-                lines.push(`● ${block.emoji} [THINKING BLOCK HIDDEN]`);
+                indicatorText = `● ${block.emoji} [THINKING BLOCK HIDDEN]`;
                 break;
             case 'tool_call':
-                lines.push(`● ${block.emoji} [TOOL CALL HIDDEN: ${block.name}]`);
+                indicatorText = `● ${block.emoji} [TOOL CALL HIDDEN: ${block.name}]`;
                 break;
             case 'tool_result':
                 const status = block.isError ? 'ERROR' : 'SUCCESS';
                 // Look up tool name from the tool call map
                 const toolName = this.toolCallMap.get(block.id) || 'Unknown';
-                lines.push(`● ${block.emoji} [TOOL RESULT HIDDEN (${status}): ${toolName}]`);
+                indicatorText = `● ${block.emoji} [TOOL RESULT HIDDEN (${status}): ${toolName}]`;
                 break;
             case 'system':
-                lines.push(`● ${block.emoji} [SYSTEM MESSAGE HIDDEN]`);
+                indicatorText = `● ${block.emoji} [SYSTEM MESSAGE HIDDEN]`;
                 break;
             default:
                 return null;
         }
 
-        return lines.join('\n');
+        // Add right-aligned timestamp if enabled
+        if (this.options.showTimestamps && message.timestamp) {
+            const timestamp = `[${message.timestamp}]`;
+            const minPadding = 2;
+            const minWidth = indicatorText.length + minPadding + timestamp.length;
+            const width = Math.max(DISPLAY.separatorWidth, minWidth);
+            const padding = width - indicatorText.length - timestamp.length;
+            indicatorText = `${indicatorText}${' '.repeat(padding)}${timestamp}`;
+        }
+
+        return '\n' + indicatorText;
     }
 
     tryPrettyPrintJson(text) {
@@ -442,11 +455,36 @@ class MessageFormatter {
     formatBlock(block, message) {
         const lines = [];
 
-        // Add header with blank lines above and below for breathing room
+        // Build the label part of the header
         const prefix = block.type === 'human' ? '' : '● ';
+        const label = `${prefix}${block.emoji} ${this.getBlockLabel(block)}:`;
+
+        // Build header line with optional right-aligned timestamp
+        let headerLine = label;
+        let separatorWidth = DISPLAY.separatorWidth;
+
+        if (this.options.showTimestamps && message.timestamp) {
+            const timestamp = `[${message.timestamp}]`;
+            const minPadding = 2;
+            const neededWidth = label.length + minPadding + timestamp.length;
+
+            // Extend separator if content would overflow
+            if (neededWidth > separatorWidth) {
+                separatorWidth = neededWidth;
+            }
+
+            // Calculate padding to right-align timestamp
+            const padding = separatorWidth - label.length - timestamp.length;
+            headerLine = `${label}${' '.repeat(padding)}${timestamp}`;
+        }
+
+        // Generate separator (may be extended for long content)
+        const separator = '—'.repeat(separatorWidth);
+
+        // Add header with blank lines above and below for breathing room
         lines.push('');
-        lines.push(this.separator);
-        lines.push(`${prefix}${block.emoji} ${this.getBlockLabel(block)}:`);
+        lines.push(separator);
+        lines.push(headerLine);
         lines.push('');
 
         // Add content based on type
@@ -806,6 +844,10 @@ class CLI {
                     options.showSystemMessages = true;
                     break;
 
+                case '--no-timestamps':
+                    options.showTimestamps = false;
+                    break;
+
                 default:
                     if (arg.startsWith('-')) {
                         console.error(`Unknown option: ${arg}`);
@@ -840,6 +882,7 @@ OPTIONS:
     --truncate           Truncate long tool inputs/outputs
     --max-length <n>     Maximum length for truncated content (default: 500)
     --show-system        Show system messages
+    --no-timestamps      Hide timestamps from message headers
 
 EXAMPLES:
     cc-view-transcript abc123def
