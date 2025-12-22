@@ -742,13 +742,19 @@ class SessionResolver {
      * Check if a path exists as a file
      * @param {string} filePath - Path to check
      * @returns {Promise<boolean>} True if file exists
+     * @throws {Error} For permission errors, filesystem errors, etc.
      */
     async fileExists(filePath) {
         try {
             const stats = await fs.promises.stat(filePath);
             return stats.isFile();
-        } catch {
-            return false;
+        } catch (error) {
+            // ENOENT = genuinely doesn't exist - return false
+            if (error.code === 'ENOENT') {
+                return false;
+            }
+            // Other errors (EACCES, EMFILE, EIO, etc.) should propagate
+            throw error;
         }
     }
 
@@ -756,13 +762,19 @@ class SessionResolver {
      * Check if a path exists as a directory
      * @param {string} dirPath - Path to check
      * @returns {Promise<boolean>} True if directory exists
+     * @throws {Error} For permission errors, filesystem errors, etc.
      */
     async isDirectory(dirPath) {
         try {
             const stats = await fs.promises.stat(dirPath);
             return stats.isDirectory();
-        } catch {
-            return false;
+        } catch (error) {
+            // ENOENT = genuinely doesn't exist - return false
+            if (error.code === 'ENOENT') {
+                return false;
+            }
+            // Other errors (EACCES, EMFILE, EIO, etc.) should propagate
+            throw error;
         }
     }
 
@@ -800,29 +812,39 @@ class SessionResolver {
     /**
      * Read the mother session ID from an agent file
      * @param {string} agentFilePath - Path to agent .jsonl file
-     * @returns {Promise<string|null>} Mother session ID or null
+     * @returns {Promise<string|null>} Mother session ID or null (with warning on error)
      */
     async getAgentParentId(agentFilePath) {
+        let stream;
+        let rl;
+        let result = null;
+
         try {
-            const stream = fs.createReadStream(agentFilePath, { encoding: 'utf8' });
-            const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+            stream = fs.createReadStream(agentFilePath, { encoding: 'utf8' });
+            rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
 
             for await (const line of rl) {
                 try {
                     const data = JSON.parse(line);
                     if (data.sessionId) {
-                        rl.close();
-                        stream.destroy();
-                        return data.sessionId;
+                        result = data.sessionId;
+                        break; // Found it - exit loop, cleanup in finally
                     }
                 } catch {
-                    // Skip non-JSON lines
+                    // Skip lines that aren't valid JSON - continue scanning
                 }
             }
-            return null;
-        } catch {
-            return null;
+        } catch (error) {
+            // Log warning but don't fail - we're in a scan loop
+            const filename = path.basename(agentFilePath);
+            console.error(`Warning: Could not read agent parent ID from ${filename}: ${error.message}`);
+        } finally {
+            // Ensure streams are always cleaned up
+            if (rl) rl.close();
+            if (stream) stream.destroy();
         }
+
+        return result;
     }
 
     /**
@@ -866,12 +888,18 @@ class SessionResolver {
                     }
 
                     sessions.push(sessionInfo);
-                } catch {
-                    // Skip files we can't stat
+                } catch (error) {
+                    // ENOENT = file deleted between readdir and stat (race condition, expected)
+                    if (error.code !== 'ENOENT') {
+                        console.error(`Warning: Cannot read session ${filename}: ${error.message}`);
+                    }
                 }
             }
-        } catch {
-            // Directory not readable
+        } catch (error) {
+            // ENOENT = directory doesn't exist (expected for non-existent project paths)
+            if (error.code !== 'ENOENT') {
+                console.error(`Warning: Cannot scan ${projectDirPath}: ${error.message}`);
+            }
         }
 
         return sessions;
@@ -911,12 +939,24 @@ class SessionResolver {
      * @returns {Promise<Array>} Matching sessions
      */
     async findByPrefix(prefix) {
-        const sessions = await this.scanSessions();
-        const normalizedPrefix = prefix.toLowerCase();
+        // If searching for agent- prefix, temporarily include agents in scan
+        const searchingForAgent = prefix.toLowerCase().startsWith('agent-');
+        const originalIncludeAgents = this.includeAgents;
+        if (searchingForAgent) {
+            this.includeAgents = true;
+        }
 
-        return sessions.filter(s =>
-            s.sessionId.toLowerCase().startsWith(normalizedPrefix)
-        );
+        try {
+            const sessions = await this.scanSessions();
+            const normalizedPrefix = prefix.toLowerCase();
+
+            return sessions.filter(s =>
+                s.sessionId.toLowerCase().startsWith(normalizedPrefix)
+            );
+        } finally {
+            // Restore original setting
+            this.includeAgents = originalIncludeAgents;
+        }
     }
 
     /**
@@ -1198,6 +1238,12 @@ class CLI {
 
                 case '--max-length':
                     i++;
+                    // Check if next arg exists and isn't a flag
+                    if (i >= args.length || args[i].startsWith('-')) {
+                        console.error(`Error: --max-length requires a numeric value`);
+                        console.error(`Example: --max-length 1000`);
+                        process.exit(1);
+                    }
                     const maxLength = parseInt(args[i], 10);
                     if (isNaN(maxLength) || maxLength <= 0) {
                         console.error(`Error: --max-length must be a positive number`);
@@ -1340,8 +1386,11 @@ async function main() {
         return;
     }
 
+    // Deduplicate resolved paths (in case multiple inputs resolve to same file)
+    const uniquePaths = [...new Set(toProcess)];
+
     // Process all resolved sessions
-    for (const filePath of toProcess) {
+    for (const filePath of uniquePaths) {
         try {
             console.log(`\n=== Parsing: ${filePath} ===\n`);
             const processor = new TranscriptProcessor(options);
