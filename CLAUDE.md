@@ -12,6 +12,31 @@ Parses Claude Code session JSONL files and displays the conversation flow:
 
 **Philosophy:** Keep it simple. Handpick only the most important fields from the schema—don't try to implement everything.
 
+## Git Workflow
+
+**KISS - One Branch Rule:**
+- All development work happens on the `dev` branch
+- Do NOT create feature branches - work directly on `dev`
+- When work is complete, tested, reviewed, and tested again: create a PR from `dev` → `main`
+- Merge PRs **without deleting** the `dev` branch
+- After merge, pull latest main into dev to stay in sync
+
+**The Flow:**
+```
+1. git checkout dev
+2. [do work, commit, test, review]
+3. git push origin dev
+4. Create PR: dev → main
+5. Merge PR (do NOT delete dev branch)
+6. git checkout dev && git pull origin main
+```
+
+**Why?**
+- Simpler mental model
+- No branch management chaos
+- No accidental deletions
+- Always know where to work
+
 ## Schema Reference
 
 Full Claude Code session JSONL schema:
