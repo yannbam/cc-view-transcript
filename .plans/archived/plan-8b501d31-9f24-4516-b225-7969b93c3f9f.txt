@@ -1,0 +1,9 @@
+🌳 "PR #1 Review Fixes"
+📝 Fix the 5 issues identified in PR #1 code review for cc-view-transcript's SessionResolver
+📊 ██████████ 100% (5/5 tasks)
+
+├── ✅ |Fix fileExists/isDirectory| "Distinguish ENOENT from other errors in fileExists() and isDirectory() methods. Currently all errors return false, hiding permission/filesystem errors." (🔴)
+├── ✅ |Fix getAgentParentId| "Fix resource leak (try/finally for stream cleanup) and add warning log for errors instead of silent suppression." (🔴)
+├── ✅ |Fix scanProjectDir errors| "Add warning logs when directory can't be read or files skipped. Don't silently return empty array on errors." (🔴)
+├── ✅ |Fix --max-length validation| "Check next arg exists and isn't a flag before parsing --max-length value." (🟡)
+└── ✅ |Fix duplicate processing| "Deduplicate toProcess array before processing multiple sessions." (🟡)
