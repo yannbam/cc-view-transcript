@@ -68,15 +68,12 @@ Full Claude Code session JSONL schema:
 
 ## Features to Implement
 
-**Next Up (Current Issues):**
-- [ ] Fix --truncate to apply to ALL message types, not just tools
-- [ ] Fix --no-thinking: show one-line replacement instead of hiding completely
-- [ ] Fix --no-tools: show one-line summary (tool name + success/failure) instead of hiding
-- [ ] Add pretty-print for structured tool results (like tool inputs)
-- [ ] Verify MCP tool results parse correctly (different structure than built-in tools)
-  - Built-in tools (Bash, Write, etc.): return structured objects → need JSON.stringify
-  - MCP tools: return ContentBlock arrays → currently only shows first block's text
-  - May need to handle multiple content blocks from MCP tools
+**Completed (verified 2025-12-22):**
+- [x] --truncate applies to ALL message types (thinking, responses, human, tools)
+- [x] --no-thinking: shows one-line indicator `● 🐱💭 [THINKING BLOCK HIDDEN]`
+- [x] --no-tools: shows one-line summary with tool name + status
+- [x] Pretty-print for structured tool results (JSON.stringify with indentation)
+- [x] MCP tool results parse correctly (handles ContentBlock arrays, multiple blocks, non-text blocks)
 
 **Phase 2 - UX Improvements:**
 - [ ] Add message index
@@ -105,12 +102,15 @@ Full Claude Code session JSONL schema:
 - Message extraction (user, assistant, system)
 - Content block parsing (text, thinking, tools)
 - Metadata display
-- Filtering options (--no-thinking, --no-tools, etc.)
-- Truncation for long tool I/O
+- Filtering options with one-line indicators (--no-thinking, --no-tools, etc.)
+- Universal truncation (--truncate applies to ALL content types)
 - Session ID lookup
+- Pretty-print for JSON tool results
+- MCP and built-in tool result parsing
 
 ❌ **Not Yet Implemented:**
 - Sub-agent transcript parsing
-- Output format variations
+- Output format variations (compact, minimal, markdown)
 - Pagination/navigation
-- Search/filter features
+- Message index and jump-to features
+- Colorized output

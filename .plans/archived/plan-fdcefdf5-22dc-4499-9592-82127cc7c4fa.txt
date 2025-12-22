@@ -1,0 +1,21 @@
+🌳 "Flexible Session Resolution"
+📝 Implement flexible session reference system for cc-view-transcript
+📊 ██████████ 100% (17/17 tasks)
+
+├── ✅ |RESOLVE_TYPE constants| "Add RESOLVE_TYPE enum after DISPLAY constants (~line 53)" (🔴)
+├── ✅ |SessionResolver class| "Add SessionResolver class after MetadataExtractor (~line 710)" (🔴) (100%)
+│   ├── ✅ |Constructor and helpers| "constructor, fileExists, isDirectory, encodeProjectPath" (🔴)
+│   ├── ✅ |resolve method| "Main entry point - detect type and resolve" (🔴)
+│   ├── ✅ |scanSessions| "Scan all project dirs for sessions with stats" (🔴)
+│   ├── ✅ |findByPrefix| "Find sessions matching UUID prefix" (🟡)
+│   ├── ✅ |findByDirectory| "Find sessions for a project directory" (🟡)
+│   ├── ✅ |formatCandidates| "Format candidate list for display with agents indented" (🟡)
+│   └── ✅ |getAgentParentId| "Read mother session ID from agent file" (🔵)
+├── ✅ |CLI changes| "Update CLI class for new flags and multiple inputs" (🔴) (100%)
+│   ├── ✅ |Add new flags| "--include-agents and --latest flags" (🔴)
+│   ├── ✅ |Multiple inputs| "Collect all non-flag args into inputs array" (🔴)
+│   ├── ✅ |Remove findTranscriptFile| "Replace with SessionResolver" (🟡)
+│   └── ✅ |Update help text| "Add new options and examples" (🟡)
+├── ✅ |Rewrite main()| "Use SessionResolver, handle multiple inputs, don't fail fast" (🔴)
+├── ✅ |Update exports| "Add SessionResolver to module.exports" (🔵)
+└── ✅ |Test| "Test various input combinations" (🔴)

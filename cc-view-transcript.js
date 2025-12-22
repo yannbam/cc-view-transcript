@@ -52,6 +52,15 @@ const DISPLAY = {
     metadataSeparator: '═'.repeat(60),
 };
 
+// Resolution result types for SessionResolver
+const RESOLVE_TYPE = {
+    FILE: 'file',           // Direct file path
+    MATCH: 'match',         // Single session match
+    CANDIDATES: 'candidates', // Multiple matches found
+    NOT_FOUND: 'not_found', // No matches
+    ERROR: 'error',         // Resolution error
+};
+
 // ================================================================================
 // MESSAGE PARSER
 // ================================================================================
@@ -709,6 +718,410 @@ class MetadataExtractor {
 }
 
 // ================================================================================
+// SESSION RESOLVER
+// ================================================================================
+
+/**
+ * Resolves session identifiers to transcript file paths.
+ * Handles: file paths, full UUIDs, prefix matches, directory lookups.
+ */
+class SessionResolver {
+    /**
+     * Create a SessionResolver instance
+     * @param {Object} options - Resolution options
+     * @param {boolean} options.includeAgents - Include agent sessions in results
+     * @param {boolean} options.latest - Auto-pick most recent on multiple matches
+     */
+    constructor(options = {}) {
+        this.includeAgents = options.includeAgents || false;
+        this.latest = options.latest || false;
+        this.projectsDir = path.join(os.homedir(), '.claude', 'projects');
+    }
+
+    /**
+     * Check if a path exists as a file
+     * @param {string} filePath - Path to check
+     * @returns {Promise<boolean>} True if file exists
+     * @throws {Error} For permission errors, filesystem errors, etc.
+     */
+    async fileExists(filePath) {
+        try {
+            const stats = await fs.promises.stat(filePath);
+            return stats.isFile();
+        } catch (error) {
+            // ENOENT = genuinely doesn't exist - return false
+            if (error.code === 'ENOENT') {
+                return false;
+            }
+            // Other errors (EACCES, EMFILE, EIO, etc.) should propagate
+            throw error;
+        }
+    }
+
+    /**
+     * Check if a path exists as a directory
+     * @param {string} dirPath - Path to check
+     * @returns {Promise<boolean>} True if directory exists
+     * @throws {Error} For permission errors, filesystem errors, etc.
+     */
+    async isDirectory(dirPath) {
+        try {
+            const stats = await fs.promises.stat(dirPath);
+            return stats.isDirectory();
+        } catch (error) {
+            // ENOENT = genuinely doesn't exist - return false
+            if (error.code === 'ENOENT') {
+                return false;
+            }
+            // Other errors (EACCES, EMFILE, EIO, etc.) should propagate
+            throw error;
+        }
+    }
+
+    /**
+     * Encode a directory path to project folder name
+     * Follows Claude Code's encoding: all non-alphanumeric chars become '-'
+     * @param {string} dirPath - Absolute directory path
+     * @returns {string} Encoded project folder name
+     */
+    static encodeProjectPath(dirPath) {
+        // Replace all non-alphanumeric characters with hyphens
+        return dirPath.replace(/[^a-zA-Z0-9]/g, '-');
+    }
+
+    /**
+     * Format file size for human-readable display
+     * @param {number} bytes - File size in bytes
+     * @returns {string} Formatted size (e.g., "1.2 MB")
+     */
+    static formatSize(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    /**
+     * Format datetime for display
+     * @param {Date} date - Date to format
+     * @returns {string} Formatted date (YYYY-MM-DD HH:MM)
+     */
+    static formatDateTime(date) {
+        return date.toISOString().slice(0, 16).replace('T', ' ');
+    }
+
+    /**
+     * Read the mother session ID from an agent file
+     * @param {string} agentFilePath - Path to agent .jsonl file
+     * @returns {Promise<string|null>} Mother session ID or null (with warning on error)
+     */
+    async getAgentParentId(agentFilePath) {
+        let stream;
+        let rl;
+        let result = null;
+
+        try {
+            stream = fs.createReadStream(agentFilePath, { encoding: 'utf8' });
+            rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+
+            for await (const line of rl) {
+                try {
+                    const data = JSON.parse(line);
+                    if (data.sessionId) {
+                        result = data.sessionId;
+                        break; // Found it - exit loop, cleanup in finally
+                    }
+                } catch {
+                    // Skip lines that aren't valid JSON - continue scanning
+                }
+            }
+        } catch (error) {
+            // Log warning but don't fail - we're in a scan loop
+            const filename = path.basename(agentFilePath);
+            console.error(`Warning: Could not read agent parent ID from ${filename}: ${error.message}`);
+        } finally {
+            // Ensure streams are always cleaned up
+            if (rl) rl.close();
+            if (stream) stream.destroy();
+        }
+
+        return result;
+    }
+
+    /**
+     * Scan a project directory for session files
+     * @param {string} projectDirPath - Full path to project directory
+     * @param {string} projectDirName - Encoded project folder name
+     * @returns {Promise<Array>} Array of session info objects
+     */
+    async scanProjectDir(projectDirPath, projectDirName) {
+        const sessions = [];
+
+        try {
+            const files = await fs.promises.readdir(projectDirPath);
+
+            for (const filename of files) {
+                if (!filename.endsWith('.jsonl')) continue;
+
+                const isAgent = filename.startsWith('agent-');
+
+                // Skip agent files unless includeAgents is set
+                if (isAgent && !this.includeAgents) continue;
+
+                const filePath = path.join(projectDirPath, filename);
+
+                try {
+                    const stats = await fs.promises.stat(filePath);
+
+                    const sessionInfo = {
+                        path: filePath,
+                        sessionId: filename.replace('.jsonl', ''),
+                        projectDir: projectDirName,
+                        modified: stats.mtime,
+                        size: stats.size,
+                        isAgent: isAgent,
+                        parentSessionId: null,
+                    };
+
+                    // Get parent session ID for agent files
+                    if (isAgent) {
+                        sessionInfo.parentSessionId = await this.getAgentParentId(filePath);
+                    }
+
+                    sessions.push(sessionInfo);
+                } catch (error) {
+                    // ENOENT = file deleted between readdir and stat (race condition, expected)
+                    if (error.code !== 'ENOENT') {
+                        console.error(`Warning: Cannot read session ${filename}: ${error.message}`);
+                    }
+                }
+            }
+        } catch (error) {
+            // ENOENT = directory doesn't exist (expected for non-existent project paths)
+            if (error.code !== 'ENOENT') {
+                console.error(`Warning: Cannot scan ${projectDirPath}: ${error.message}`);
+            }
+        }
+
+        return sessions;
+    }
+
+    /**
+     * Scan all project directories for session files
+     * @returns {Promise<Array>} Array of session info objects
+     */
+    async scanSessions() {
+        const sessions = [];
+
+        try {
+            const projectDirs = await fs.promises.readdir(this.projectsDir, { withFileTypes: true });
+
+            for (const projDir of projectDirs) {
+                if (!projDir.isDirectory()) continue;
+
+                const projPath = path.join(this.projectsDir, projDir.name);
+                const projectSessions = await this.scanProjectDir(projPath, projDir.name);
+                sessions.push(...projectSessions);
+            }
+        } catch (error) {
+            // Projects directory not accessible
+            throw new Error(`Cannot access projects directory: ${this.projectsDir}`);
+        }
+
+        // Sort by modification date (newest first)
+        sessions.sort((a, b) => b.modified - a.modified);
+
+        return sessions;
+    }
+
+    /**
+     * Find sessions matching a prefix
+     * @param {string} prefix - Session ID prefix to match
+     * @returns {Promise<Array>} Matching sessions
+     */
+    async findByPrefix(prefix) {
+        // If searching for agent- prefix, temporarily include agents in scan
+        const searchingForAgent = prefix.toLowerCase().startsWith('agent-');
+        const originalIncludeAgents = this.includeAgents;
+        if (searchingForAgent) {
+            this.includeAgents = true;
+        }
+
+        try {
+            const sessions = await this.scanSessions();
+            const normalizedPrefix = prefix.toLowerCase();
+
+            return sessions.filter(s =>
+                s.sessionId.toLowerCase().startsWith(normalizedPrefix)
+            );
+        } finally {
+            // Restore original setting
+            this.includeAgents = originalIncludeAgents;
+        }
+    }
+
+    /**
+     * Find sessions for a project directory
+     * @param {string} dirPath - Absolute directory path
+     * @returns {Promise<Array>} Sessions in that project
+     */
+    async findByDirectory(dirPath) {
+        // Encode the path to find the project folder
+        const encodedName = SessionResolver.encodeProjectPath(dirPath);
+        const projPath = path.join(this.projectsDir, encodedName);
+
+        // Check if project directory exists
+        if (!await this.isDirectory(projPath)) {
+            return [];
+        }
+
+        const sessions = await this.scanProjectDir(projPath, encodedName);
+
+        // Sort by modification date (newest first)
+        sessions.sort((a, b) => b.modified - a.modified);
+
+        return sessions;
+    }
+
+    /**
+     * Handle candidates result - apply --latest or return candidates
+     * @param {Array} sessions - Matching sessions
+     * @param {string} input - Original input for error messages
+     * @returns {Object} Resolution result
+     */
+    handleCandidates(sessions, input) {
+        if (sessions.length === 0) {
+            return { type: RESOLVE_TYPE.NOT_FOUND, input };
+        }
+
+        if (sessions.length === 1 || this.latest) {
+            // Sessions are sorted by modified (newest first)
+            return {
+                type: RESOLVE_TYPE.MATCH,
+                path: sessions[0].path,
+                session: sessions[0],
+            };
+        }
+
+        return { type: RESOLVE_TYPE.CANDIDATES, candidates: sessions };
+    }
+
+    /**
+     * Resolve a session reference to a file path
+     * @param {string} input - Session ID, file path, or directory path
+     * @returns {Promise<Object>} Resolution result
+     */
+    async resolve(input) {
+        try {
+            // 1. Direct .jsonl file path?
+            if (input.endsWith('.jsonl')) {
+                const resolved = path.resolve(input);
+                if (await this.fileExists(resolved)) {
+                    return { type: RESOLVE_TYPE.FILE, path: resolved };
+                }
+                return { type: RESOLVE_TYPE.NOT_FOUND, input };
+            }
+
+            // 2. Path with slashes - could be file or directory
+            if (input.includes('/') || input.includes('\\')) {
+                const resolved = path.resolve(input);
+
+                // Check if it's a file
+                if (await this.fileExists(resolved)) {
+                    return { type: RESOLVE_TYPE.FILE, path: resolved };
+                }
+
+                // Check if it's a directory
+                if (await this.isDirectory(resolved)) {
+                    const sessions = await this.findByDirectory(resolved);
+                    return this.handleCandidates(sessions, input);
+                }
+
+                return { type: RESOLVE_TYPE.NOT_FOUND, input };
+            }
+
+            // 3. Could be '.' or '..' - check as directory first
+            const resolvedDir = path.resolve(input);
+            if (await this.isDirectory(resolvedDir)) {
+                const sessions = await this.findByDirectory(resolvedDir);
+                return this.handleCandidates(sessions, input);
+            }
+
+            // 4. Treat as session ID prefix
+            const sessions = await this.findByPrefix(input);
+            return this.handleCandidates(sessions, input);
+
+        } catch (error) {
+            return { type: RESOLVE_TYPE.ERROR, input, error: error.message };
+        }
+    }
+
+    /**
+     * Format candidate list for display
+     * @param {Array} candidates - Array of session info objects
+     * @returns {string} Formatted table
+     */
+    static formatCandidates(candidates) {
+        const lines = [];
+
+        // Separate regular sessions and agents
+        const regularSessions = candidates.filter(c => !c.isAgent);
+        const agentSessions = candidates.filter(c => c.isAgent);
+
+        // Build agent lookup by parent session ID
+        const agentsByParent = new Map();
+        for (const agent of agentSessions) {
+            if (agent.parentSessionId) {
+                if (!agentsByParent.has(agent.parentSessionId)) {
+                    agentsByParent.set(agent.parentSessionId, []);
+                }
+                agentsByParent.get(agent.parentSessionId).push(agent);
+            }
+        }
+
+        // Header
+        lines.push('  SESSION ID                              PROJECT                                MODIFIED             SIZE');
+        lines.push('  ' + '─'.repeat(100));
+
+        // Format each regular session with its agents
+        for (const session of regularSessions) {
+            const sessionId = session.sessionId.padEnd(36);
+            const projectDir = session.projectDir.substring(0, 38).padEnd(38);
+            const modified = SessionResolver.formatDateTime(session.modified).padEnd(18);
+            const size = SessionResolver.formatSize(session.size).padStart(10);
+
+            lines.push(`  ${sessionId}  ${projectDir}  ${modified}  ${size}`);
+
+            // Add child agents indented below
+            const childAgents = agentsByParent.get(session.sessionId) || [];
+            for (const agent of childAgents) {
+                const agentId = ('  └─ ' + agent.sessionId).padEnd(38);
+                const agentModified = SessionResolver.formatDateTime(agent.modified).padEnd(18);
+                const agentSize = SessionResolver.formatSize(agent.size).padStart(10);
+                lines.push(`  ${agentId}  ${''.padEnd(38)}  ${agentModified}  ${agentSize}`);
+            }
+        }
+
+        // Add orphan agents (agents without a parent in the list)
+        const orphanAgents = agentSessions.filter(a =>
+            !regularSessions.some(s => s.sessionId === a.parentSessionId)
+        );
+        for (const agent of orphanAgents) {
+            const agentId = agent.sessionId.padEnd(36);
+            const projectDir = agent.projectDir.substring(0, 38).padEnd(38);
+            const modified = SessionResolver.formatDateTime(agent.modified).padEnd(18);
+            const size = SessionResolver.formatSize(agent.size).padStart(10);
+            lines.push(`  ${agentId}  ${projectDir}  ${modified}  ${size}  (agent)`);
+        }
+
+        lines.push('');
+        const count = regularSessions.length + orphanAgents.length;
+        lines.push(`Found ${count} matching sessions. Use --latest to auto-pick most recent.`);
+
+        return lines.join('\n');
+    }
+}
+
+// ================================================================================
 // TRANSCRIPT PROCESSOR (Main Pipeline)
 // ================================================================================
 
@@ -792,7 +1205,8 @@ class CLI {
             process.exit(0);
         }
 
-        let inputPath = null;
+        // Collect multiple input arguments
+        const inputs = [];
 
         for (let i = 0; i < args.length; i++) {
             const arg = args[i];
@@ -824,6 +1238,12 @@ class CLI {
 
                 case '--max-length':
                     i++;
+                    // Check if next arg exists and isn't a flag
+                    if (i >= args.length || args[i].startsWith('-')) {
+                        console.error(`Error: --max-length requires a numeric value`);
+                        console.error(`Example: --max-length 1000`);
+                        process.exit(1);
+                    }
                     const maxLength = parseInt(args[i], 10);
                     if (isNaN(maxLength) || maxLength <= 0) {
                         console.error(`Error: --max-length must be a positive number`);
@@ -834,12 +1254,6 @@ class CLI {
                     options.maxToolLength = maxLength;
                     break;
 
-                // TODO: Implement --format option
-                // case '--format':
-                //     i++;
-                //     options.outputFormat = args[i];
-                //     break;
-
                 case '--show-system':
                     options.showSystemMessages = true;
                     break;
@@ -848,20 +1262,29 @@ class CLI {
                     options.showTimestamps = false;
                     break;
 
+                case '--include-agents':
+                    options.includeAgents = true;
+                    break;
+
+                case '--latest':
+                    options.latest = true;
+                    break;
+
                 default:
                     if (arg.startsWith('-')) {
                         console.error(`Unknown option: ${arg}`);
                         process.exit(1);
                     }
-                    inputPath = arg;
+                    // Collect all non-flag arguments as inputs
+                    inputs.push(arg);
             }
         }
 
-        return { inputPath, options };
+        return { inputs, options };
     }
 
     static showUsage() {
-        console.log('Usage: cc-view-transcript <session-id-or-jsonl-file> [options]');
+        console.log('Usage: cc-view-transcript <session-refs...> [options]');
     }
 
     static showHelp() {
@@ -869,10 +1292,13 @@ class CLI {
 cc-view-transcript - View Claude Code session transcripts
 
 USAGE:
-    cc-view-transcript <session-id-or-jsonl-file> [options]
+    cc-view-transcript <session-refs...> [options]
 
 ARGUMENTS:
-    <session-id-or-jsonl-file>    Session ID or path to .jsonl file
+    <session-refs...>    One or more session references:
+                         - Session ID or prefix (abc123, 4eea8d85-...)
+                         - Path to .jsonl file
+                         - Project directory (uses sessions for that project)
 
 OPTIONS:
     -h, --help           Show this help message
@@ -883,76 +1309,27 @@ OPTIONS:
     --max-length <n>     Maximum length for truncated content (default: 500)
     --show-system        Show system messages
     --no-timestamps      Hide timestamps from message headers
+    --include-agents     Include agent sessions in listings (indented under mother)
+    --latest             Auto-select most recent session for ambiguous matches
 
 EXAMPLES:
-    cc-view-transcript abc123def
-    cc-view-transcript session.jsonl --no-thinking
-    cc-view-transcript session.jsonl --truncate --max-length 1000
+    cc-view-transcript abc123              # Shortened UUID (prefix match)
+    cc-view-transcript ./session.jsonl     # Direct file path
+    cc-view-transcript .                   # Sessions for current directory
+    cc-view-transcript /path/to/project    # Sessions for specific project
+    cc-view-transcript abc def ghi         # Multiple sessions
+    cc-view-transcript . --latest          # Most recent session in current dir
+    cc-view-transcript abc --include-agents # Show agent sessions too
 
 NOTES:
     - By default, shows all content including thinking, tools, and metadata
-    - Automatically finds transcript files when given a session ID
-    - TODO: Sub-agent transcript parsing not yet implemented
+    - Prefix matching finds sessions starting with the given ID
+    - Multiple matches show a candidate list (use --latest to auto-pick)
+    - Agent sessions are hidden by default (use --include-agents)
 `;
         console.log(help);
     }
 
-    static async findTranscriptFile(sessionId) {
-        // Validate session ID to prevent command injection
-        // Only allow alphanumeric characters, hyphens, and underscores
-        const validSessionIdPattern = /^[a-zA-Z0-9_-]+$/;
-        if (!validSessionIdPattern.test(sessionId)) {
-            throw new Error(
-                `Invalid session ID format: "${sessionId}"\n` +
-                `Session IDs must contain only letters, numbers, hyphens, and underscores.`
-            );
-        }
-
-        // Check if projects directory exists before searching
-        const homeDir = os.homedir();
-        const projectsDir = path.join(homeDir, '.claude', 'projects');
-
-        if (!fs.existsSync(projectsDir)) {
-            throw new Error(
-                `Claude Code projects directory not found: ${projectsDir}\n` +
-                `Please ensure Claude Code is installed and has been run at least once.`
-            );
-        }
-
-        // Search for the transcript file using promisified exec
-        try {
-            const { stdout, stderr } = await execAsync(
-                `find "${projectsDir}" -name "${sessionId}.jsonl" 2>&1 | head -1`,
-                { timeout: 30000 }  // 30 second timeout
-            );
-
-            // Check if stderr contains permission errors
-            if (stderr && stderr.includes('Permission denied')) {
-                throw new Error(
-                    `Permission denied while searching for transcripts.\n` +
-                    `Check file permissions on: ${projectsDir}`
-                );
-            }
-
-            // Return found path or null if not found
-            return stdout.trim() || null;
-        } catch (error) {
-            // Distinguish timeout from other errors
-            if (error.killed) {
-                throw new Error(
-                    `Transcript search timed out after 30 seconds.\n` +
-                    `The projects directory may be too large: ${projectsDir}`
-                );
-            }
-
-            // Other execution errors
-            throw new Error(
-                `Failed to search for transcript file.\n` +
-                `Error: ${error.message}\n` +
-                `Directory: ${projectsDir}`
-            );
-        }
-    }
 }
 
 // ================================================================================
@@ -960,74 +1337,77 @@ NOTES:
 // ================================================================================
 
 async function main() {
-    const { inputPath, options } = CLI.parseArgs(process.argv);
+    const { inputs, options } = CLI.parseArgs(process.argv);
 
-    let transcriptPath = inputPath;
+    // Handle no inputs
+    if (inputs.length === 0) {
+        CLI.showHelp();
+        process.exit(0);
+    }
 
-    try {
-        // Determine if input looks like a file path or session ID
-        // Heuristic: if it contains path separators or file extension, treat as file path
-        const looksLikeFilePath = inputPath.includes('/') ||
-                                   inputPath.includes('\\') ||
-                                   inputPath.endsWith('.jsonl');
+    // Create resolver with options
+    const resolver = new SessionResolver(options);
+    const toProcess = [];
+    let hasErrors = false;
 
-        if (looksLikeFilePath) {
-            // Treat as file path - validate it exists first
-            // Using async access() reduces (but doesn't eliminate) race window vs existsSync()
-            try {
-                await fs.promises.access(transcriptPath, fs.constants.R_OK);
-            } catch (accessError) {
-                if (accessError.code === 'ENOENT') {
-                    throw Object.assign(new Error(`File not found: ${transcriptPath}`), { code: 'ENOENT' });
-                } else if (accessError.code === 'EACCES') {
-                    throw Object.assign(new Error(`Permission denied: ${transcriptPath}`), { code: 'EACCES' });
-                }
-                throw accessError;
-            }
+    // Resolve all inputs first (don't fail fast)
+    for (const input of inputs) {
+        const result = await resolver.resolve(input);
 
-            console.log(`=== Parsing: ${transcriptPath} ===\n`);
-            const processor = new TranscriptProcessor(options);
-            await processor.process(transcriptPath);
-        } else {
-            // Treat as session ID - look up the file
-            console.log(`Looking for transcript with session ID: ${inputPath}`);
-            transcriptPath = await CLI.findTranscriptFile(inputPath);
+        switch (result.type) {
+            case RESOLVE_TYPE.FILE:
+            case RESOLVE_TYPE.MATCH:
+                toProcess.push(result.path);
+                break;
 
-            if (!transcriptPath) {
-                console.error(`Error: Could not find transcript for session ${inputPath}`);
-                console.error('Please provide a valid session ID or path to .jsonl file');
-                process.exit(1);
-            }
+            case RESOLVE_TYPE.CANDIDATES:
+                console.error(`\nMultiple sessions match "${input}":\n`);
+                console.error(SessionResolver.formatCandidates(result.candidates));
+                hasErrors = true;
+                break;
 
-            console.log(`=== Parsing: ${transcriptPath} ===\n`);
-            const processor = new TranscriptProcessor(options);
-            await processor.process(transcriptPath);
+            case RESOLVE_TYPE.NOT_FOUND:
+                console.error(`No session found: ${input}`);
+                hasErrors = true;
+                break;
+
+            case RESOLVE_TYPE.ERROR:
+                console.error(`Error resolving "${input}": ${result.error}`);
+                hasErrors = true;
+                break;
         }
-    } catch (error) {
-        // Distinguish different error types for better user experience
-        if (error.code === 'ENOENT') {
-            console.error(`Error: File not found: ${transcriptPath}`);
-            console.error('Please check the path and try again.');
+    }
+
+    // Exit if no sessions to process
+    if (toProcess.length === 0) {
+        if (hasErrors) {
             process.exit(1);
-        } else if (error.code === 'EACCES') {
-            console.error(`Error: Permission denied: ${transcriptPath}`);
-            console.error('Please check file permissions and try again.');
-            process.exit(1);
-        } else if (error.message && error.message.includes('parse')) {
-            console.error(`Error: Failed to parse transcript file`);
-            console.error(error.message);
-            console.error('\nThe transcript file may be corrupt.');
-            process.exit(1);
-        } else {
-            // Generic error with full message
-            console.error('Error processing transcript:');
+        }
+        return;
+    }
+
+    // Deduplicate resolved paths (in case multiple inputs resolve to same file)
+    const uniquePaths = [...new Set(toProcess)];
+
+    // Process all resolved sessions
+    for (const filePath of uniquePaths) {
+        try {
+            console.log(`\n=== Parsing: ${filePath} ===\n`);
+            const processor = new TranscriptProcessor(options);
+            await processor.process(filePath);
+        } catch (error) {
+            console.error(`Error processing ${filePath}:`);
             console.error(error.message);
             if (process.env.DEBUG) {
                 console.error('\nStack trace:');
                 console.error(error.stack);
             }
-            process.exit(1);
+            hasErrors = true;
         }
+    }
+
+    if (hasErrors) {
+        process.exit(1);
     }
 }
 
@@ -1044,6 +1424,8 @@ module.exports = {
     MessageParser,
     MessageFormatter,
     MetadataExtractor,
+    SessionResolver,
     TranscriptProcessor,
+    RESOLVE_TYPE,
     DEFAULT_OPTIONS,
 };
