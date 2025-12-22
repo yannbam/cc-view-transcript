@@ -1,0 +1,119 @@
+{
+  "uuid": "fbfdbaff-da76-4ec7-a554-dedccdc970e5",
+  "name": "show-timestamps-feature",
+  "details": "Implement --show-timestamps CLI flag to display timestamp for each message in transcript output.\n\nFeature Request: display the timestamp for each message when --show-timestamps",
+  "tasks": [
+    {
+      "name": "Discovery",
+      "details": "Understand the feature request and confirm requirements",
+      "status": "completed",
+      "priority": "high",
+      "sub_tasks": [
+        {
+          "name": "Clarify feature requirements",
+          "details": "Confirm what timestamp format, where to display, etc.",
+          "status": "completed",
+          "priority": "high",
+          "uuid": "daac7284-314d-4792-a4ba-ed098fc069d3",
+          "created_at": "2025-11-28T17:25:26.181Z",
+          "updated_at": "2025-11-28T17:28:24.980Z"
+        }
+      ],
+      "uuid": "fae68ea8-f660-45d7-bc53-c7a9dc730750",
+      "created_at": "2025-11-28T17:25:26.180Z",
+      "updated_at": "2025-11-28T17:25:26.180Z",
+      "completion_percentage": 100
+    },
+    {
+      "name": "Codebase Exploration",
+      "details": "Understand existing patterns for CLI options and message formatting",
+      "status": "completed",
+      "priority": "high",
+      "sub_tasks": [
+        {
+          "name": "Explore CLI patterns",
+          "details": "How other flags work (--no-thinking, --truncate, etc.)",
+          "status": "completed",
+          "priority": "high",
+          "uuid": "3d68fb09-e26d-4204-85c6-dee5a9b57294",
+          "created_at": "2025-11-28T17:25:26.181Z",
+          "updated_at": "2025-11-28T17:29:17.896Z"
+        },
+        {
+          "name": "Explore message formatting",
+          "details": "How messages are formatted and displayed",
+          "status": "completed",
+          "priority": "high",
+          "uuid": "796ae93c-598b-43cb-b51a-3a1b28e86f61",
+          "created_at": "2025-11-28T17:25:26.181Z",
+          "updated_at": "2025-11-28T17:29:17.896Z"
+        },
+        {
+          "name": "Read key files",
+          "details": "Read files identified by exploration",
+          "status": "completed",
+          "priority": "medium",
+          "uuid": "6669c604-f729-4f9e-8669-d724a6e5d9fd",
+          "created_at": "2025-11-28T17:25:26.181Z",
+          "updated_at": "2025-11-28T17:29:17.896Z"
+        }
+      ],
+      "uuid": "52ced34c-3283-4396-b16b-560cce56ba4e",
+      "created_at": "2025-11-28T17:25:26.181Z",
+      "updated_at": "2025-11-28T17:25:26.181Z",
+      "completion_percentage": 100
+    },
+    {
+      "name": "Clarifying Questions",
+      "details": "Ask user about edge cases, format preferences, etc.",
+      "status": "completed",
+      "priority": "high",
+      "sub_tasks": [],
+      "uuid": "daf640c7-9a7c-464e-b731-ad1b90e77b3e",
+      "created_at": "2025-11-28T17:25:26.181Z",
+      "updated_at": "2025-11-28T17:32:11.388Z"
+    },
+    {
+      "name": "Architecture Design",
+      "details": "Design implementation approach",
+      "status": "completed",
+      "priority": "medium",
+      "sub_tasks": [],
+      "uuid": "8ab1150f-e2fa-4bcd-98ab-efea8a2945da",
+      "created_at": "2025-11-28T17:25:26.181Z",
+      "updated_at": "2025-11-28T17:32:34.541Z"
+    },
+    {
+      "name": "Implementation",
+      "details": "Implement the feature",
+      "status": "completed",
+      "priority": "medium",
+      "sub_tasks": [],
+      "uuid": "882e6b50-d8b6-458f-a3cc-7a6c1819249a",
+      "created_at": "2025-11-28T17:25:26.181Z",
+      "updated_at": "2025-11-28T17:35:29.347Z"
+    },
+    {
+      "name": "Quality Review",
+      "details": "Review code quality and correctness",
+      "status": "completed",
+      "priority": "medium",
+      "sub_tasks": [],
+      "uuid": "51c92c5d-32d3-45d8-8df6-59f858b38cd8",
+      "created_at": "2025-11-28T17:25:26.181Z",
+      "updated_at": "2025-11-28T17:54:58.660Z"
+    },
+    {
+      "name": "Summary",
+      "details": "Document what was accomplished",
+      "status": "completed",
+      "priority": "low",
+      "sub_tasks": [],
+      "uuid": "f37d3fdd-06af-4243-9ca2-06b3baedb62a",
+      "created_at": "2025-11-28T17:25:26.181Z",
+      "updated_at": "2025-11-28T17:55:08.306Z"
+    }
+  ],
+  "created_at": "2025-11-28T17:25:26.181Z",
+  "updated_at": "2025-11-28T17:55:08.306Z"
+}
