@@ -1192,6 +1192,122 @@ class TranscriptProcessor {
 }
 
 // ================================================================================
+// API EXPORTER
+// ================================================================================
+
+/**
+ * Exports transcript as Anthropic API-compatible messages array.
+ * Reconstructs streaming chunks into complete messages.
+ */
+class ApiExporter {
+    /**
+     * Extract API messages from transcript file
+     * @param {string} filePath - Path to JSONL transcript file
+     * @returns {Promise<Object>} Object with messages array and metadata
+     */
+    async extract(filePath) {
+        return new Promise((resolve, reject) => {
+            const stream = fs.createReadStream(filePath);
+            const rl = readline.createInterface({
+                input: stream,
+                crlfDelay: Infinity,
+            });
+
+            // Cleanup function
+            const cleanup = () => {
+                rl.close();
+                stream.destroy();
+            };
+
+            const messages = [];
+            let pendingAssistant = null;  // {requestId, content: [...]}
+            let hasSummaries = false;
+            let sessionId = null;
+
+            rl.on('line', (line) => {
+                // Parse JSONL line
+                let parsed;
+                try {
+                    parsed = JSON.parse(line);
+                } catch (e) {
+                    return;  // Skip invalid lines
+                }
+
+                // Capture session ID from first message
+                if (!sessionId && parsed.sessionId) {
+                    sessionId = parsed.sessionId;
+                }
+
+                // Skip non-API message types
+                if (parsed.type === 'summary') {
+                    hasSummaries = true;
+                    return;
+                }
+                if (parsed.type === 'system') return;  // Hooks, not API messages
+                if (parsed.isSidechain) return;  // Agent sessions
+
+                // Handle user messages (direct pass-through)
+                if (parsed.type === 'user') {
+                    // Flush pending assistant if any
+                    if (pendingAssistant) {
+                        messages.push({ role: 'assistant', content: pendingAssistant.content });
+                        pendingAssistant = null;
+                    }
+                    // Add user message directly
+                    messages.push(parsed.message);
+                }
+
+                // Handle assistant messages (accumulate by requestId)
+                if (parsed.type === 'assistant' && parsed.message?.content) {
+                    const requestId = parsed.requestId;
+
+                    if (pendingAssistant && pendingAssistant.requestId === requestId) {
+                        // Same response, merge content blocks
+                        pendingAssistant.content.push(...parsed.message.content);
+                    } else {
+                        // New response - flush pending and start new
+                        if (pendingAssistant) {
+                            messages.push({ role: 'assistant', content: pendingAssistant.content });
+                        }
+                        pendingAssistant = {
+                            requestId,
+                            content: [...parsed.message.content]
+                        };
+                    }
+                }
+            });
+
+            rl.on('close', () => {
+                // Flush final pending assistant message
+                if (pendingAssistant) {
+                    messages.push({ role: 'assistant', content: pendingAssistant.content });
+                }
+
+                cleanup();
+                resolve({
+                    messages,
+                    metadata: {
+                        sessionId,
+                        messageCount: messages.length,
+                        hasSummaries,
+                    }
+                });
+            });
+
+            rl.on('error', (error) => {
+                cleanup();
+                reject(error);
+            });
+
+            stream.on('error', (error) => {
+                cleanup();
+                reject(error);
+            });
+        });
+    }
+}
+
+// ================================================================================
 // CLI INTERFACE
 // ================================================================================
 
@@ -1262,6 +1378,10 @@ class CLI {
                     options.showTimestamps = false;
                     break;
 
+                case '--api-json':
+                    options.apiJson = true;
+                    break;
+
                 case '--include-agents':
                     options.includeAgents = true;
                     break;
@@ -1311,6 +1431,7 @@ OPTIONS:
     --no-timestamps      Hide timestamps from message headers
     --include-agents     Include agent sessions in listings (indented under mother)
     --latest             Auto-select most recent session for ambiguous matches
+    --api-json           Output as Anthropic API messages JSON (for API continuation)
 
 EXAMPLES:
     cc-view-transcript abc123              # Shortened UUID (prefix match)
@@ -1389,7 +1510,34 @@ async function main() {
     // Deduplicate resolved paths (in case multiple inputs resolve to same file)
     const uniquePaths = [...new Set(toProcess)];
 
-    // Process all resolved sessions
+    // Handle API JSON export mode
+    if (options.apiJson) {
+        const exporter = new ApiExporter();
+        const allMessages = [];
+
+        for (const filePath of uniquePaths) {
+            try {
+                const result = await exporter.extract(filePath);
+
+                // Warn about summarized history on stderr
+                if (result.metadata.hasSummaries) {
+                    console.error(`Warning: ${filePath} contains summarized history. Export may be incomplete.`);
+                }
+
+                allMessages.push(...result.messages);
+            } catch (error) {
+                console.error(`Error extracting ${filePath}:`);
+                console.error(error.message);
+                hasErrors = true;
+            }
+        }
+
+        // Output clean JSON to stdout
+        console.log(JSON.stringify({ messages: allMessages }, null, 2));
+        return;
+    }
+
+    // Process all resolved sessions (display mode)
     for (const filePath of uniquePaths) {
         try {
             console.log(`\n=== Parsing: ${filePath} ===\n`);
@@ -1426,6 +1574,7 @@ module.exports = {
     MetadataExtractor,
     SessionResolver,
     TranscriptProcessor,
+    ApiExporter,
     RESOLVE_TYPE,
     DEFAULT_OPTIONS,
 };
