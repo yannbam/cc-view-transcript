@@ -1246,15 +1246,28 @@ class ApiExporter {
                 if (parsed.type === 'system') return;  // Hooks, not API messages
                 if (parsed.isSidechain) return;  // Agent sessions
 
-                // Handle user messages (direct pass-through)
+                // Handle user messages
                 if (parsed.type === 'user') {
                     // Flush pending assistant if any
                     if (pendingAssistant) {
                         messages.push({ role: 'assistant', content: pendingAssistant.content });
                         pendingAssistant = null;
                     }
-                    // Add user message directly
-                    messages.push(parsed.message);
+
+                    const content = parsed.message.content;
+                    const isToolResultOnly = Array.isArray(content) &&
+                        content.length > 0 &&
+                        content.every(block => block.type === 'tool_result');
+
+                    // Merge consecutive tool_result messages into one user message
+                    const lastMsg = messages[messages.length - 1];
+                    if (isToolResultOnly && lastMsg?.role === 'user' && Array.isArray(lastMsg.content)) {
+                        // Append tool_results to previous user message
+                        lastMsg.content.push(...content);
+                    } else {
+                        // New user message (human text or first tool_result batch)
+                        messages.push(parsed.message);
+                    }
                 }
 
                 // Handle assistant messages (accumulate by requestId)
