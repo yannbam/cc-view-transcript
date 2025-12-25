@@ -42,6 +42,7 @@ The tool accepts multiple flexible session references:
 --no-timestamps      Hide timestamps from headers
 --include-agents     Include agent sessions in listings
 --latest             Auto-select most recent session
+--api-json           Export as Anthropic API messages JSON
 ```
 
 ### Examples
@@ -79,6 +80,42 @@ When given a prefix or directory:
    - Agent sessions (with `--include-agents`)
 
 Use `--latest` to auto-pick the most recently modified session.
+
+## API Export
+
+Export a session as Anthropic API-compatible JSON for use with the Messages API:
+
+```bash
+# Export to stdout
+cc-view-transcript 4eea --api-json
+
+# Save to file
+cc-view-transcript 4eea --api-json > conversation.json
+
+# Pipe to jq for inspection
+cc-view-transcript 4eea --api-json | jq '.messages | length'
+```
+
+The output is a JSON object with a `messages` array ready for the Anthropic API:
+
+```json
+{
+  "messages": [
+    {"role": "user", "content": "Hello!"},
+    {"role": "assistant", "content": [{"type": "text", "text": "Hi!"}]},
+    ...
+  ]
+}
+```
+
+**Features:**
+- Reconstructs streaming chunks into complete messages
+- Merges consecutive tool_results (Bedrock compatible)
+- Preserves thinking blocks with signatures
+- Skips sidechains (agents) and system hooks
+- Warns on stderr if session has summarized history
+
+**Note:** Runtime context injections (system-reminders) are not stored in JSONL and cannot be exported.
 
 ## Output Format
 

@@ -93,12 +93,13 @@ Full Claude Code session JSONL schema:
 
 ## Features to Implement
 
-**Completed (verified 2025-12-22):**
+**Completed (verified 2025-12-25):**
 - [x] --truncate applies to ALL message types (thinking, responses, human, tools)
 - [x] --no-thinking: shows one-line indicator `● 🐱💭 [THINKING BLOCK HIDDEN]`
 - [x] --no-tools: shows one-line summary with tool name + status
 - [x] Pretty-print for structured tool results (JSON.stringify with indentation)
 - [x] MCP tool results parse correctly (handles ContentBlock arrays, multiple blocks, non-text blocks)
+- [x] --api-json: Export as Anthropic API-compatible messages JSON (for session continuation)
 
 **Phase 2 - UX Improvements:**
 - [ ] Add message index
@@ -132,6 +133,7 @@ Full Claude Code session JSONL schema:
 - Session ID lookup
 - Pretty-print for JSON tool results
 - MCP and built-in tool result parsing
+- API JSON export (--api-json) for session continuation
 
 ❌ **Not Yet Implemented:**
 - Sub-agent transcript parsing
