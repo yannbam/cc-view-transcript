@@ -1255,17 +1255,23 @@ class ApiExporter {
                     }
 
                     const content = parsed.message.content;
-                    const isToolResultOnly = Array.isArray(content) &&
-                        content.length > 0 &&
-                        content.every(block => block.type === 'tool_result');
-
-                    // Merge consecutive tool_result messages into one user message
                     const lastMsg = messages[messages.length - 1];
-                    if (isToolResultOnly && lastMsg?.role === 'user' && Array.isArray(lastMsg.content)) {
-                        // Append tool_results to previous user message
-                        lastMsg.content.push(...content);
+
+                    // Convert content to array format for merging
+                    const contentAsArray = Array.isArray(content)
+                        ? content
+                        : [{ type: 'text', text: content }];
+
+                    // Merge consecutive user messages into one
+                    if (lastMsg?.role === 'user') {
+                        // Ensure lastMsg.content is an array
+                        if (!Array.isArray(lastMsg.content)) {
+                            lastMsg.content = [{ type: 'text', text: lastMsg.content }];
+                        }
+                        // Append new content blocks
+                        lastMsg.content.push(...contentAsArray);
                     } else {
-                        // New user message (human text or first tool_result batch)
+                        // New user message
                         messages.push(parsed.message);
                     }
                 }
