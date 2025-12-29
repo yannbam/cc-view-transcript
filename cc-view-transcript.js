@@ -62,6 +62,71 @@ const RESOLVE_TYPE = {
 };
 
 // ================================================================================
+// TIME FORMATTING UTILITIES
+// ================================================================================
+
+/**
+ * Format a date/timestamp as local ISO8601 with timezone offset
+ * Example: 2025-12-29T10:30:45 +01:00
+ * @param {Date|string|number} input - Date object, ISO string, or timestamp
+ * @returns {string} Local ISO8601 formatted string with offset
+ */
+function formatLocalIso(input) {
+    const d = new Date(input);
+
+    // Handle invalid dates
+    if (isNaN(d.getTime())) {
+        return String(input);
+    }
+
+    // Calculate timezone offset
+    const offsetMinutes = -d.getTimezoneOffset();
+    const sign = offsetMinutes >= 0 ? '+' : '-';
+    const offsetHours = String(Math.floor(Math.abs(offsetMinutes) / 60)).padStart(2, '0');
+    const offsetMins = String(Math.abs(offsetMinutes) % 60).padStart(2, '0');
+
+    // Build local date components
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const hour = String(d.getHours()).padStart(2, '0');
+    const min = String(d.getMinutes()).padStart(2, '0');
+    const sec = String(d.getSeconds()).padStart(2, '0');
+
+    return `${year}-${month}-${day}T${hour}:${min}:${sec} ${sign}${offsetHours}:${offsetMins}`;
+}
+
+/**
+ * Format a date/timestamp as short local datetime with offset (for listings)
+ * Example: 2025-12-29 10:30 +01:00
+ * @param {Date|string|number} input - Date object, ISO string, or timestamp
+ * @returns {string} Short local datetime with offset
+ */
+function formatLocalShort(input) {
+    const d = new Date(input);
+
+    // Handle invalid dates
+    if (isNaN(d.getTime())) {
+        return String(input);
+    }
+
+    // Calculate timezone offset
+    const offsetMinutes = -d.getTimezoneOffset();
+    const sign = offsetMinutes >= 0 ? '+' : '-';
+    const offsetHours = String(Math.floor(Math.abs(offsetMinutes) / 60)).padStart(2, '0');
+    const offsetMins = String(Math.abs(offsetMinutes) % 60).padStart(2, '0');
+
+    // Build local date components (without seconds for brevity)
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const hour = String(d.getHours()).padStart(2, '0');
+    const min = String(d.getMinutes()).padStart(2, '0');
+
+    return `${year}-${month}-${day} ${hour}:${min} ${sign}${offsetHours}:${offsetMins}`;
+}
+
+// ================================================================================
 // MESSAGE PARSER
 // ================================================================================
 
@@ -405,9 +470,10 @@ class MessageFormatter {
                 return null;
         }
 
-        // Add right-aligned timestamp if enabled
+        // Add right-aligned timestamp if enabled (converted to local time)
         if (this.options.showTimestamps && message.timestamp) {
-            const timestamp = `[${message.timestamp}]`;
+            const localTimestamp = formatLocalIso(message.timestamp);
+            const timestamp = `[${localTimestamp}]`;
             const minPadding = 2;
             const minWidth = indicatorText.length + minPadding + timestamp.length;
             const width = Math.max(DISPLAY.separatorWidth, minWidth);
@@ -468,12 +534,13 @@ class MessageFormatter {
         const prefix = block.type === 'human' ? '' : '● ';
         const label = `${prefix}${block.emoji} ${this.getBlockLabel(block)}:`;
 
-        // Build header line with optional right-aligned timestamp
+        // Build header line with optional right-aligned timestamp (converted to local time)
         let headerLine = label;
         let separatorWidth = DISPLAY.separatorWidth;
 
         if (this.options.showTimestamps && message.timestamp) {
-            const timestamp = `[${message.timestamp}]`;
+            const localTimestamp = formatLocalIso(message.timestamp);
+            const timestamp = `[${localTimestamp}]`;
             const minPadding = 2;
             const neededWidth = label.length + minPadding + timestamp.length;
 
@@ -700,13 +767,17 @@ class MetadataExtractor {
      * @returns {string} Formatted metadata display with session info and counts
      */
     static format(metadata) {
+        const startedTime = metadata.timestamp
+            ? formatLocalIso(metadata.timestamp)
+            : 'unknown';
+
         const lines = [
             '',
             `${EMOJI.metadata} SESSION METADATA`,
             DISPLAY.metadataSeparator,
             `Session ID:     ${metadata.sessionId || 'unknown'}`,
             `Project Path:   ${metadata.projectPath || 'unknown'}`,
-            `Started:        ${metadata.timestamp ? new Date(metadata.timestamp).toLocaleString() : 'unknown'}`,
+            `Started:        ${startedTime}`,
             `Messages:       ${metadata.messageCount}`,
             `Tool Calls:     ${metadata.toolCallCount}`,
             `Has Sub-Agents: ${metadata.hasSubAgents ? 'Yes' : 'No'}`,
@@ -801,12 +872,12 @@ class SessionResolver {
     }
 
     /**
-     * Format datetime for display
+     * Format datetime for display (local time with timezone offset)
      * @param {Date} date - Date to format
-     * @returns {string} Formatted date (YYYY-MM-DD HH:MM)
+     * @returns {string} Formatted local date with offset (YYYY-MM-DD HH:MM +HH:MM)
      */
     static formatDateTime(date) {
-        return date.toISOString().slice(0, 16).replace('T', ' ');
+        return formatLocalShort(date);
     }
 
     /**
@@ -1057,6 +1128,7 @@ class SessionResolver {
 
     /**
      * Format candidate list for display
+     * Note: Input is sorted newest-first internally; we reverse for display (oldest first, newest at bottom)
      * @param {Array} candidates - Array of session info objects
      * @returns {string} Formatted table
      */
@@ -1064,7 +1136,8 @@ class SessionResolver {
         const lines = [];
 
         // Separate regular sessions and agents
-        const regularSessions = candidates.filter(c => !c.isAgent);
+        // Reverse order so newest appears at bottom (more natural for terminal scrollback)
+        const regularSessions = candidates.filter(c => !c.isAgent).reverse();
         const agentSessions = candidates.filter(c => c.isAgent);
 
         // Build agent lookup by parent session ID
@@ -1078,15 +1151,15 @@ class SessionResolver {
             }
         }
 
-        // Header
-        lines.push('  SESSION ID                              PROJECT                                MODIFIED             SIZE');
-        lines.push('  ' + '─'.repeat(100));
+        // Header (MODIFIED column wider for timezone offset)
+        lines.push('  SESSION ID                              PROJECT                                MODIFIED                    SIZE');
+        lines.push('  ' + '─'.repeat(110));
 
         // Format each regular session with its agents
         for (const session of regularSessions) {
             const sessionId = session.sessionId.padEnd(36);
             const projectDir = session.projectDir.substring(0, 38).padEnd(38);
-            const modified = SessionResolver.formatDateTime(session.modified).padEnd(18);
+            const modified = SessionResolver.formatDateTime(session.modified).padEnd(25);
             const size = SessionResolver.formatSize(session.size).padStart(10);
 
             lines.push(`  ${sessionId}  ${projectDir}  ${modified}  ${size}`);
@@ -1095,7 +1168,7 @@ class SessionResolver {
             const childAgents = agentsByParent.get(session.sessionId) || [];
             for (const agent of childAgents) {
                 const agentId = ('  └─ ' + agent.sessionId).padEnd(38);
-                const agentModified = SessionResolver.formatDateTime(agent.modified).padEnd(18);
+                const agentModified = SessionResolver.formatDateTime(agent.modified).padEnd(25);
                 const agentSize = SessionResolver.formatSize(agent.size).padStart(10);
                 lines.push(`  ${agentId}  ${''.padEnd(38)}  ${agentModified}  ${agentSize}`);
             }
@@ -1108,7 +1181,7 @@ class SessionResolver {
         for (const agent of orphanAgents) {
             const agentId = agent.sessionId.padEnd(36);
             const projectDir = agent.projectDir.substring(0, 38).padEnd(38);
-            const modified = SessionResolver.formatDateTime(agent.modified).padEnd(18);
+            const modified = SessionResolver.formatDateTime(agent.modified).padEnd(25);
             const size = SessionResolver.formatSize(agent.size).padStart(10);
             lines.push(`  ${agentId}  ${projectDir}  ${modified}  ${size}  (agent)`);
         }

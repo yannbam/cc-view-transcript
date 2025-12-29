@@ -99,7 +99,7 @@ Full Claude Code session JSONL schema:
 - [x] --no-tools: shows one-line summary with tool name + status
 - [x] Pretty-print for structured tool results (JSON.stringify with indentation)
 - [x] MCP tool results parse correctly (handles ContentBlock arrays, multiple blocks, non-text blocks)
-- [x] --api-json: Export as Anthropic API-compatible messages JSON (for session continuation)
+- [ ] --api-json: Export as Anthropic API-compatible messages JSON (WIP - needs more testing)
 
 **Phase 2 - UX Improvements:**
 - [ ] Add message index
