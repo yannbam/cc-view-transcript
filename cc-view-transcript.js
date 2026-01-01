@@ -392,9 +392,10 @@ class MessageFormatter {
     /**
      * Format a parsed message for display
      * @param {Object} message - Parsed message object
+     * @param {number|null} lineNumber - Line number in JSONL file (for L-prefix display)
      * @returns {string} Formatted message as string with headers, content, and separators
      */
-    format(message) {
+    format(message, lineNumber = null) {
         // Track tool calls from assistant messages before formatting
         if (message.type === 'assistant') {
             const messageContent = message.message?.content || [];
@@ -413,13 +414,13 @@ class MessageFormatter {
             // Check if content should be displayed in full or as indicator
             if (!this.shouldDisplay(block)) {
                 // Show one-line indicator for filtered content (Display Integrity principle)
-                const indicator = this.formatFilteredIndicator(block, message);
+                const indicator = this.formatFilteredIndicator(block, message, lineNumber);
                 if (indicator) {
                     output.push(indicator);
                 }
             } else {
                 // Show full content
-                const formatted = this.formatBlock(block, message);
+                const formatted = this.formatBlock(block, message, lineNumber);
                 if (formatted) {
                     output.push(formatted);
                 }
@@ -444,7 +445,7 @@ class MessageFormatter {
         }
     }
 
-    formatFilteredIndicator(block, message) {
+    formatFilteredIndicator(block, message, lineNumber = null) {
         // Return one-line indicator showing what's hidden
         // This maintains Display Integrity principle - content is never silently removed
 
@@ -470,15 +471,24 @@ class MessageFormatter {
                 return null;
         }
 
-        // Add right-aligned timestamp if enabled (converted to local time)
+        // Build suffix parts (timestamp and line number)
+        const suffixParts = [];
         if (this.options.showTimestamps && message.timestamp) {
             const localTimestamp = formatLocalIso(message.timestamp);
-            const timestamp = `[${localTimestamp}]`;
+            suffixParts.push(`[${localTimestamp}]`);
+        }
+        if (lineNumber !== null) {
+            suffixParts.push(`L${lineNumber}`);
+        }
+
+        // Add right-aligned suffix if we have any parts
+        if (suffixParts.length > 0) {
+            const suffix = suffixParts.join(' ');
             const minPadding = 2;
-            const minWidth = indicatorText.length + minPadding + timestamp.length;
+            const minWidth = indicatorText.length + minPadding + suffix.length;
             const width = Math.max(DISPLAY.separatorWidth, minWidth);
-            const padding = width - indicatorText.length - timestamp.length;
-            indicatorText = `${indicatorText}${' '.repeat(padding)}${timestamp}`;
+            const padding = width - indicatorText.length - suffix.length;
+            indicatorText = `${indicatorText}${' '.repeat(padding)}${suffix}`;
         }
 
         return '\n' + indicatorText;
@@ -527,31 +537,40 @@ class MessageFormatter {
         return [text];
     }
 
-    formatBlock(block, message) {
+    formatBlock(block, message, lineNumber = null) {
         const lines = [];
 
         // Build the label part of the header
         const prefix = block.type === 'human' ? '' : '● ';
         const label = `${prefix}${block.emoji} ${this.getBlockLabel(block)}:`;
 
-        // Build header line with optional right-aligned timestamp (converted to local time)
+        // Build suffix parts (timestamp and line number)
+        const suffixParts = [];
+        if (this.options.showTimestamps && message.timestamp) {
+            const localTimestamp = formatLocalIso(message.timestamp);
+            suffixParts.push(`[${localTimestamp}]`);
+        }
+        if (lineNumber !== null) {
+            suffixParts.push(`L${lineNumber}`);
+        }
+
+        // Build header line with optional right-aligned suffix
         let headerLine = label;
         let separatorWidth = DISPLAY.separatorWidth;
 
-        if (this.options.showTimestamps && message.timestamp) {
-            const localTimestamp = formatLocalIso(message.timestamp);
-            const timestamp = `[${localTimestamp}]`;
+        if (suffixParts.length > 0) {
+            const suffix = suffixParts.join(' ');
             const minPadding = 2;
-            const neededWidth = label.length + minPadding + timestamp.length;
+            const neededWidth = label.length + minPadding + suffix.length;
 
             // Extend separator if content would overflow
             if (neededWidth > separatorWidth) {
                 separatorWidth = neededWidth;
             }
 
-            // Calculate padding to right-align timestamp
-            const padding = separatorWidth - label.length - timestamp.length;
-            headerLine = `${label}${' '.repeat(padding)}${timestamp}`;
+            // Calculate padding to right-align suffix
+            const padding = separatorWidth - label.length - suffix.length;
+            headerLine = `${label}${' '.repeat(padding)}${suffix}`;
         }
 
         // Generate separator (may be extended for long content)
@@ -1239,7 +1258,8 @@ class TranscriptProcessor {
                 const message = MessageParser.parseLine(line, lineNumber);
 
                 // Always format the message (including parse errors)
-                const formatted = this.formatter.format(message);
+                // Pass lineNumber for L-prefix display in headers
+                const formatted = this.formatter.format(message, lineNumber);
                 if (formatted) {
                     console.log(formatted);
                 }
