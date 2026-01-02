@@ -25,7 +25,7 @@ const DEFAULT_OPTIONS = {
     showThinking: true,
     showToolCalls: true,
     showToolResults: true,
-    showSystemMessages: false,
+    showSystemMessages: true,
     showMetadata: true,
     showTimestamps: true,
     truncateTools: false,
@@ -465,8 +465,8 @@ class MessageFormatter {
                 indicatorText = `● ${block.emoji} [TOOL RESULT HIDDEN (${status}): ${toolName}]`;
                 break;
             case 'system':
-                indicatorText = `● ${block.emoji} [SYSTEM MESSAGE HIDDEN]`;
-                break;
+                // System messages are fully suppressed when hidden (no indicator)
+                return null;
             default:
                 return null;
         }
@@ -1482,8 +1482,8 @@ class CLI {
                     options.maxToolLength = maxLength;
                     break;
 
-                case '--show-system':
-                    options.showSystemMessages = true;
+                case '--no-system':
+                    options.showSystemMessages = false;
                     break;
 
                 case '--no-timestamps':
@@ -1539,7 +1539,7 @@ OPTIONS:
     --no-metadata        Hide session metadata
     --truncate           Truncate long tool inputs/outputs
     --max-length <n>     Maximum length for truncated content (default: 500)
-    --show-system        Show system messages
+    --no-system          Hide system messages (fully suppressed)
     --no-timestamps      Hide timestamps from message headers
     --include-agents     Include agent sessions in listings (indented under mother)
     --latest             Auto-select most recent session for ambiguous matches
@@ -1555,7 +1555,7 @@ EXAMPLES:
     cc-view-transcript abc --include-agents # Show agent sessions too
 
 NOTES:
-    - By default, shows all content including thinking, tools, and metadata
+    - By default, shows all content including thinking, tools, system messages, and metadata
     - Prefix matching finds sessions starting with the given ID
     - Multiple matches show a candidate list (use --latest to auto-pick)
     - Agent sessions are hidden by default (use --include-agents)
