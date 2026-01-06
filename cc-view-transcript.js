@@ -30,6 +30,7 @@ const DEFAULT_OPTIONS = {
     showTimestamps: true,
     truncateTools: false,
     maxToolLength: 500,
+    includeAgents: true,
     // TODO: Implement different output formats (full, compact, minimal)
     // outputFormat: 'full',
 };
@@ -819,11 +820,11 @@ class SessionResolver {
     /**
      * Create a SessionResolver instance
      * @param {Object} options - Resolution options
-     * @param {boolean} options.includeAgents - Include agent sessions in results
+     * @param {boolean} options.includeAgents - Include agent sessions in results (default: true)
      * @param {boolean} options.latest - Auto-pick most recent on multiple matches
      */
     constructor(options = {}) {
-        this.includeAgents = options.includeAgents || false;
+        this.includeAgents = options.includeAgents !== false;
         this.latest = options.latest || false;
         this.projectsDir = path.join(os.homedir(), '.claude', 'projects');
     }
@@ -1494,8 +1495,8 @@ class CLI {
                     options.apiJson = true;
                     break;
 
-                case '--include-agents':
-                    options.includeAgents = true;
+                case '--exclude-agents':
+                    options.includeAgents = false;
                     break;
 
                 case '--latest':
@@ -1541,7 +1542,7 @@ OPTIONS:
     --max-length <n>     Maximum length for truncated content (default: 500)
     --no-system          Hide system messages (fully suppressed)
     --no-timestamps      Hide timestamps from message headers
-    --include-agents     Include agent sessions in listings (indented under mother)
+    --exclude-agents     Exclude agent sessions from listings
     --latest             Auto-select most recent session for ambiguous matches
     --api-json           Output as Anthropic API messages JSON (for API continuation)
 
@@ -1552,13 +1553,13 @@ EXAMPLES:
     cc-view-transcript /path/to/project    # Sessions for specific project
     cc-view-transcript abc def ghi         # Multiple sessions
     cc-view-transcript . --latest          # Most recent session in current dir
-    cc-view-transcript abc --include-agents # Show agent sessions too
+    cc-view-transcript abc --exclude-agents # Hide agent sessions
 
 NOTES:
     - By default, shows all content including thinking, tools, system messages, and metadata
     - Prefix matching finds sessions starting with the given ID
     - Multiple matches show a candidate list (use --latest to auto-pick)
-    - Agent sessions are hidden by default (use --include-agents)
+    - Agent sessions are included by default (use --exclude-agents to hide)
 `;
         console.log(help);
     }

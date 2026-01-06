@@ -38,9 +38,9 @@ The tool accepts multiple flexible session references:
 --no-metadata        Hide session metadata header
 --truncate           Truncate long content
 --max-length <n>     Max length for truncated content (default: 500)
---show-system        Show system messages (hidden by default)
+--no-system          Hide system messages (shown by default)
 --no-timestamps      Hide timestamps from headers
---include-agents     Include agent sessions in listings
+--exclude-agents     Exclude agent sessions from listings
 --latest             Auto-select most recent session
 --api-json           Export as Anthropic API messages JSON
 ```
@@ -57,8 +57,8 @@ cc-view-transcript . --latest
 # View multiple sessions
 cc-view-transcript abc123 def456 ghi789
 
-# List all sessions for current project with agents
-cc-view-transcript . --include-agents
+# List all sessions for current project without agents
+cc-view-transcript . --exclude-agents
 
 # Compact view without thinking blocks
 cc-view-transcript 4eea --no-thinking --no-tools
@@ -77,7 +77,7 @@ When given a prefix or directory:
    - Project directory (encoded)
    - Last modified date
    - File size
-   - Agent sessions (with `--include-agents`)
+   - Agent sessions (included by default, use `--exclude-agents` to hide)
 
 Use `--latest` to auto-pick the most recently modified session.
 
