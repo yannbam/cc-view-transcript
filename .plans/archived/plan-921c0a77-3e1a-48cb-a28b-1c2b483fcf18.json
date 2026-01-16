@@ -1,0 +1,44 @@
+{
+  "uuid": "921c0a77-3e1a-48cb-a28b-1c2b483fcf18",
+  "name": "API Export Feature",
+  "tasks": [
+    {
+      "name": "Read current source",
+      "details": "Understand TranscriptProcessor and CLI structure for integration points",
+      "status": "completed",
+      "priority": "high",
+      "uuid": "67a8fb73-47ec-405d-88f3-6307adc9d296",
+      "created_at": "2025-12-24T22:05:35.068Z",
+      "updated_at": "2025-12-24T22:06:04.391Z"
+    },
+    {
+      "name": "Implement ApiExporter",
+      "details": "Class to extract and merge messages from JSONL into API format",
+      "status": "completed",
+      "priority": "high",
+      "uuid": "dd5e36f4-35b4-4e56-8626-319c3d20fd49",
+      "created_at": "2025-12-24T22:05:35.104Z",
+      "updated_at": "2025-12-24T22:06:31.701Z"
+    },
+    {
+      "name": "Add CLI flag",
+      "details": "Add --api-json flag, mutually exclusive with display options",
+      "status": "completed",
+      "priority": "high",
+      "uuid": "bb31a8a9-6fc8-4670-8732-bc4d75209e30",
+      "created_at": "2025-12-24T22:05:35.104Z",
+      "updated_at": "2025-12-24T22:07:26.380Z"
+    },
+    {
+      "name": "Test with real session",
+      "details": "Run against actual session file, verify output is valid API format",
+      "status": "completed",
+      "priority": "high",
+      "uuid": "8f5d590e-ff9d-46e1-9ee9-42f160117506",
+      "created_at": "2025-12-24T22:05:35.104Z",
+      "updated_at": "2025-12-24T22:08:18.296Z"
+    }
+  ],
+  "created_at": "2025-12-24T22:05:35.104Z",
+  "updated_at": "2025-12-24T22:08:23.032Z"
+}

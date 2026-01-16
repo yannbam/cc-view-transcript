@@ -12,6 +12,31 @@ Parses Claude Code session JSONL files and displays the conversation flow:
 
 **Philosophy:** Keep it simple. Handpick only the most important fields from the schema—don't try to implement everything.
 
+## Git Workflow
+
+**KISS - One Branch Rule:**
+- All development work happens on the `dev` branch
+- Do NOT create feature branches - work directly on `dev`
+- When work is complete, tested, reviewed, and tested again: create a PR from `dev` → `main`
+- Merge PRs **without deleting** the `dev` branch
+- After merge, pull latest main into dev to stay in sync
+
+**The Flow:**
+```
+1. git checkout dev
+2. [do work, commit, test, review]
+3. git push origin dev
+4. Create PR: dev → main
+5. Merge PR (do NOT delete dev branch)
+6. git checkout dev && git pull origin main
+```
+
+**Why?**
+- Simpler mental model
+- No branch management chaos
+- No accidental deletions
+- Always know where to work
+
 ## Schema Reference
 
 Full Claude Code session JSONL schema:
@@ -68,15 +93,26 @@ Full Claude Code session JSONL schema:
 
 ## Features to Implement
 
-**Completed (verified 2025-12-22):**
+**Completed (verified 2026-01-16):**
 - [x] --truncate applies to ALL message types (thinking, responses, human, tools)
 - [x] --no-thinking: shows one-line indicator `● 🐱💭 [THINKING BLOCK HIDDEN]`
 - [x] --no-tools: shows one-line summary with tool name + status
+- [x] --no-system: fully suppresses system messages (no indicator)
+- [x] --no-timestamps: hides timestamps from message headers
+- [x] --no-metadata: hides session metadata header
+- [x] --exclude-agents: excludes agent sessions from listings
+- [x] --latest: auto-selects most recent session
+- [x] --api-json: Export as Anthropic API messages JSON (preserves thinking signatures)
 - [x] Pretty-print for structured tool results (JSON.stringify with indentation)
 - [x] MCP tool results parse correctly (handles ContentBlock arrays, multiple blocks, non-text blocks)
+- [x] Line number index (L-prefix) on all message headers
+- [x] Local time with timezone offset in all timestamps
+- [x] Session listing: oldest first, newest at bottom (natural terminal order)
+- [x] Agent sessions nested under parent sessions in listings
+- [x] Multiple session references support
 
 **Phase 2 - UX Improvements:**
-- [ ] Add message index
+- [x] Add message index (line numbers with L-prefix) ✓
 - [ ] Pagination for large sessions
 - [ ] Overview mode
 - [ ] Jump to specific message by index/ID
@@ -84,8 +120,10 @@ Full Claude Code session JSONL schema:
 **Phase 3 - Advanced Parsing:**
 - [ ] Sub-agent transcript parsing
 - [ ] Extract and display sub-agent conversations inline
+- [ ] Branch/sub-session separators (resume, compaction, clear, rewind points)
 
 **Phase 4 - Output Formats:**
+- [ ] Verbose mode (--verbose): include message uuid, parentUuid
 - [ ] Compact mode
 - [ ] Minimal mode
 - [ ] JSON output mode (structured data)
@@ -101,16 +139,25 @@ Full Claude Code session JSONL schema:
 - JSONL parsing (stream-based)
 - Message extraction (user, assistant, system)
 - Content block parsing (text, thinking, tools)
-- Metadata display
-- Filtering options with one-line indicators (--no-thinking, --no-tools, etc.)
+- Metadata display with message/tool counts
+- Filtering options with one-line indicators (--no-thinking, --no-tools)
+- System message suppression (--no-system, fully hidden)
 - Universal truncation (--truncate applies to ALL content types)
-- Session ID lookup
+- Session resolution: file paths, UUIDs, prefixes, directories
+- Multiple session references in single command
+- Agent session nesting in listings (--exclude-agents to hide)
 - Pretty-print for JSON tool results
 - MCP and built-in tool result parsing
+- API JSON export (--api-json) with thinking signature preservation
+- Line number index (L-prefix) on message headers
+- Local time with timezone offset throughout
+- Session listing: oldest→newest (newest at bottom)
 
 ❌ **Not Yet Implemented:**
-- Sub-agent transcript parsing
+- Sub-agent transcript parsing (inline display)
+- Branch/session separators (resume, compaction, rewind points)
+- Verbose mode (message uuid, parentUuid)
 - Output format variations (compact, minimal, markdown)
 - Pagination/navigation
-- Message index and jump-to features
+- Jump to specific message by index
 - Colorized output

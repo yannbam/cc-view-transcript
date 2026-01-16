@@ -1,0 +1,7 @@
+🌳 "API Export Feature"
+📊 ██████████ 100% (4/4 tasks)
+
+├── ✅ |Read current source| "Understand TranscriptProcessor and CLI structure for integration points" (🔴)
+├── ✅ |Implement ApiExporter| "Class to extract and merge messages from JSONL into API format" (🔴)
+├── ✅ |Add CLI flag| "Add --api-json flag, mutually exclusive with display options" (🔴)
+└── ✅ |Test with real session| "Run against actual session file, verify output is valid API format" (🔴)

@@ -25,11 +25,12 @@ const DEFAULT_OPTIONS = {
     showThinking: true,
     showToolCalls: true,
     showToolResults: true,
-    showSystemMessages: false,
+    showSystemMessages: true,
     showMetadata: true,
     showTimestamps: true,
     truncateTools: false,
     maxToolLength: 500,
+    includeAgents: true,
     // TODO: Implement different output formats (full, compact, minimal)
     // outputFormat: 'full',
 };
@@ -60,6 +61,71 @@ const RESOLVE_TYPE = {
     NOT_FOUND: 'not_found', // No matches
     ERROR: 'error',         // Resolution error
 };
+
+// ================================================================================
+// TIME FORMATTING UTILITIES
+// ================================================================================
+
+/**
+ * Format a date/timestamp as local ISO8601 with timezone offset
+ * Example: 2025-12-29T10:30:45 +01:00
+ * @param {Date|string|number} input - Date object, ISO string, or timestamp
+ * @returns {string} Local ISO8601 formatted string with offset
+ */
+function formatLocalIso(input) {
+    const d = new Date(input);
+
+    // Handle invalid dates
+    if (isNaN(d.getTime())) {
+        return String(input);
+    }
+
+    // Calculate timezone offset
+    const offsetMinutes = -d.getTimezoneOffset();
+    const sign = offsetMinutes >= 0 ? '+' : '-';
+    const offsetHours = String(Math.floor(Math.abs(offsetMinutes) / 60)).padStart(2, '0');
+    const offsetMins = String(Math.abs(offsetMinutes) % 60).padStart(2, '0');
+
+    // Build local date components
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const hour = String(d.getHours()).padStart(2, '0');
+    const min = String(d.getMinutes()).padStart(2, '0');
+    const sec = String(d.getSeconds()).padStart(2, '0');
+
+    return `${year}-${month}-${day}T${hour}:${min}:${sec} ${sign}${offsetHours}:${offsetMins}`;
+}
+
+/**
+ * Format a date/timestamp as short local datetime with offset (for listings)
+ * Example: 2025-12-29 10:30 +01:00
+ * @param {Date|string|number} input - Date object, ISO string, or timestamp
+ * @returns {string} Short local datetime with offset
+ */
+function formatLocalShort(input) {
+    const d = new Date(input);
+
+    // Handle invalid dates
+    if (isNaN(d.getTime())) {
+        return String(input);
+    }
+
+    // Calculate timezone offset
+    const offsetMinutes = -d.getTimezoneOffset();
+    const sign = offsetMinutes >= 0 ? '+' : '-';
+    const offsetHours = String(Math.floor(Math.abs(offsetMinutes) / 60)).padStart(2, '0');
+    const offsetMins = String(Math.abs(offsetMinutes) % 60).padStart(2, '0');
+
+    // Build local date components (without seconds for brevity)
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const hour = String(d.getHours()).padStart(2, '0');
+    const min = String(d.getMinutes()).padStart(2, '0');
+
+    return `${year}-${month}-${day} ${hour}:${min} ${sign}${offsetHours}:${offsetMins}`;
+}
 
 // ================================================================================
 // MESSAGE PARSER
@@ -327,9 +393,10 @@ class MessageFormatter {
     /**
      * Format a parsed message for display
      * @param {Object} message - Parsed message object
+     * @param {number|null} lineNumber - Line number in JSONL file (for L-prefix display)
      * @returns {string} Formatted message as string with headers, content, and separators
      */
-    format(message) {
+    format(message, lineNumber = null) {
         // Track tool calls from assistant messages before formatting
         if (message.type === 'assistant') {
             const messageContent = message.message?.content || [];
@@ -348,13 +415,13 @@ class MessageFormatter {
             // Check if content should be displayed in full or as indicator
             if (!this.shouldDisplay(block)) {
                 // Show one-line indicator for filtered content (Display Integrity principle)
-                const indicator = this.formatFilteredIndicator(block, message);
+                const indicator = this.formatFilteredIndicator(block, message, lineNumber);
                 if (indicator) {
                     output.push(indicator);
                 }
             } else {
                 // Show full content
-                const formatted = this.formatBlock(block, message);
+                const formatted = this.formatBlock(block, message, lineNumber);
                 if (formatted) {
                     output.push(formatted);
                 }
@@ -379,7 +446,7 @@ class MessageFormatter {
         }
     }
 
-    formatFilteredIndicator(block, message) {
+    formatFilteredIndicator(block, message, lineNumber = null) {
         // Return one-line indicator showing what's hidden
         // This maintains Display Integrity principle - content is never silently removed
 
@@ -399,20 +466,30 @@ class MessageFormatter {
                 indicatorText = `● ${block.emoji} [TOOL RESULT HIDDEN (${status}): ${toolName}]`;
                 break;
             case 'system':
-                indicatorText = `● ${block.emoji} [SYSTEM MESSAGE HIDDEN]`;
-                break;
+                // System messages are fully suppressed when hidden (no indicator)
+                return null;
             default:
                 return null;
         }
 
-        // Add right-aligned timestamp if enabled
+        // Build suffix parts (timestamp and line number)
+        const suffixParts = [];
         if (this.options.showTimestamps && message.timestamp) {
-            const timestamp = `[${message.timestamp}]`;
+            const localTimestamp = formatLocalIso(message.timestamp);
+            suffixParts.push(`[${localTimestamp}]`);
+        }
+        if (lineNumber !== null) {
+            suffixParts.push(`L${lineNumber}`);
+        }
+
+        // Add right-aligned suffix if we have any parts
+        if (suffixParts.length > 0) {
+            const suffix = suffixParts.join(' ');
             const minPadding = 2;
-            const minWidth = indicatorText.length + minPadding + timestamp.length;
+            const minWidth = indicatorText.length + minPadding + suffix.length;
             const width = Math.max(DISPLAY.separatorWidth, minWidth);
-            const padding = width - indicatorText.length - timestamp.length;
-            indicatorText = `${indicatorText}${' '.repeat(padding)}${timestamp}`;
+            const padding = width - indicatorText.length - suffix.length;
+            indicatorText = `${indicatorText}${' '.repeat(padding)}${suffix}`;
         }
 
         return '\n' + indicatorText;
@@ -461,30 +538,40 @@ class MessageFormatter {
         return [text];
     }
 
-    formatBlock(block, message) {
+    formatBlock(block, message, lineNumber = null) {
         const lines = [];
 
         // Build the label part of the header
         const prefix = block.type === 'human' ? '' : '● ';
         const label = `${prefix}${block.emoji} ${this.getBlockLabel(block)}:`;
 
-        // Build header line with optional right-aligned timestamp
+        // Build suffix parts (timestamp and line number)
+        const suffixParts = [];
+        if (this.options.showTimestamps && message.timestamp) {
+            const localTimestamp = formatLocalIso(message.timestamp);
+            suffixParts.push(`[${localTimestamp}]`);
+        }
+        if (lineNumber !== null) {
+            suffixParts.push(`L${lineNumber}`);
+        }
+
+        // Build header line with optional right-aligned suffix
         let headerLine = label;
         let separatorWidth = DISPLAY.separatorWidth;
 
-        if (this.options.showTimestamps && message.timestamp) {
-            const timestamp = `[${message.timestamp}]`;
+        if (suffixParts.length > 0) {
+            const suffix = suffixParts.join(' ');
             const minPadding = 2;
-            const neededWidth = label.length + minPadding + timestamp.length;
+            const neededWidth = label.length + minPadding + suffix.length;
 
             // Extend separator if content would overflow
             if (neededWidth > separatorWidth) {
                 separatorWidth = neededWidth;
             }
 
-            // Calculate padding to right-align timestamp
-            const padding = separatorWidth - label.length - timestamp.length;
-            headerLine = `${label}${' '.repeat(padding)}${timestamp}`;
+            // Calculate padding to right-align suffix
+            const padding = separatorWidth - label.length - suffix.length;
+            headerLine = `${label}${' '.repeat(padding)}${suffix}`;
         }
 
         // Generate separator (may be extended for long content)
@@ -700,13 +787,17 @@ class MetadataExtractor {
      * @returns {string} Formatted metadata display with session info and counts
      */
     static format(metadata) {
+        const startedTime = metadata.timestamp
+            ? formatLocalIso(metadata.timestamp)
+            : 'unknown';
+
         const lines = [
             '',
             `${EMOJI.metadata} SESSION METADATA`,
             DISPLAY.metadataSeparator,
             `Session ID:     ${metadata.sessionId || 'unknown'}`,
             `Project Path:   ${metadata.projectPath || 'unknown'}`,
-            `Started:        ${metadata.timestamp ? new Date(metadata.timestamp).toLocaleString() : 'unknown'}`,
+            `Started:        ${startedTime}`,
             `Messages:       ${metadata.messageCount}`,
             `Tool Calls:     ${metadata.toolCallCount}`,
             `Has Sub-Agents: ${metadata.hasSubAgents ? 'Yes' : 'No'}`,
@@ -729,11 +820,11 @@ class SessionResolver {
     /**
      * Create a SessionResolver instance
      * @param {Object} options - Resolution options
-     * @param {boolean} options.includeAgents - Include agent sessions in results
+     * @param {boolean} options.includeAgents - Include agent sessions in results (default: true)
      * @param {boolean} options.latest - Auto-pick most recent on multiple matches
      */
     constructor(options = {}) {
-        this.includeAgents = options.includeAgents || false;
+        this.includeAgents = options.includeAgents !== false;
         this.latest = options.latest || false;
         this.projectsDir = path.join(os.homedir(), '.claude', 'projects');
     }
@@ -801,12 +892,12 @@ class SessionResolver {
     }
 
     /**
-     * Format datetime for display
+     * Format datetime for display (local time with timezone offset)
      * @param {Date} date - Date to format
-     * @returns {string} Formatted date (YYYY-MM-DD HH:MM)
+     * @returns {string} Formatted local date with offset (YYYY-MM-DD HH:MM +HH:MM)
      */
     static formatDateTime(date) {
-        return date.toISOString().slice(0, 16).replace('T', ' ');
+        return formatLocalShort(date);
     }
 
     /**
@@ -1057,6 +1148,7 @@ class SessionResolver {
 
     /**
      * Format candidate list for display
+     * Note: Input is sorted newest-first internally; we reverse for display (oldest first, newest at bottom)
      * @param {Array} candidates - Array of session info objects
      * @returns {string} Formatted table
      */
@@ -1064,7 +1156,8 @@ class SessionResolver {
         const lines = [];
 
         // Separate regular sessions and agents
-        const regularSessions = candidates.filter(c => !c.isAgent);
+        // Reverse order so newest appears at bottom (more natural for terminal scrollback)
+        const regularSessions = candidates.filter(c => !c.isAgent).reverse();
         const agentSessions = candidates.filter(c => c.isAgent);
 
         // Build agent lookup by parent session ID
@@ -1078,15 +1171,15 @@ class SessionResolver {
             }
         }
 
-        // Header
-        lines.push('  SESSION ID                              PROJECT                                MODIFIED             SIZE');
-        lines.push('  ' + '─'.repeat(100));
+        // Header (MODIFIED column wider for timezone offset)
+        lines.push('  SESSION ID                              PROJECT                                MODIFIED                    SIZE');
+        lines.push('  ' + '─'.repeat(110));
 
         // Format each regular session with its agents
         for (const session of regularSessions) {
             const sessionId = session.sessionId.padEnd(36);
             const projectDir = session.projectDir.substring(0, 38).padEnd(38);
-            const modified = SessionResolver.formatDateTime(session.modified).padEnd(18);
+            const modified = SessionResolver.formatDateTime(session.modified).padEnd(25);
             const size = SessionResolver.formatSize(session.size).padStart(10);
 
             lines.push(`  ${sessionId}  ${projectDir}  ${modified}  ${size}`);
@@ -1095,7 +1188,7 @@ class SessionResolver {
             const childAgents = agentsByParent.get(session.sessionId) || [];
             for (const agent of childAgents) {
                 const agentId = ('  └─ ' + agent.sessionId).padEnd(38);
-                const agentModified = SessionResolver.formatDateTime(agent.modified).padEnd(18);
+                const agentModified = SessionResolver.formatDateTime(agent.modified).padEnd(25);
                 const agentSize = SessionResolver.formatSize(agent.size).padStart(10);
                 lines.push(`  ${agentId}  ${''.padEnd(38)}  ${agentModified}  ${agentSize}`);
             }
@@ -1108,7 +1201,7 @@ class SessionResolver {
         for (const agent of orphanAgents) {
             const agentId = agent.sessionId.padEnd(36);
             const projectDir = agent.projectDir.substring(0, 38).padEnd(38);
-            const modified = SessionResolver.formatDateTime(agent.modified).padEnd(18);
+            const modified = SessionResolver.formatDateTime(agent.modified).padEnd(25);
             const size = SessionResolver.formatSize(agent.size).padStart(10);
             lines.push(`  ${agentId}  ${projectDir}  ${modified}  ${size}  (agent)`);
         }
@@ -1166,7 +1259,8 @@ class TranscriptProcessor {
                 const message = MessageParser.parseLine(line, lineNumber);
 
                 // Always format the message (including parse errors)
-                const formatted = this.formatter.format(message);
+                // Pass lineNumber for L-prefix display in headers
+                const formatted = this.formatter.format(message, lineNumber);
                 if (formatted) {
                     console.log(formatted);
                 }
@@ -1183,6 +1277,141 @@ class TranscriptProcessor {
             });
 
             // Also handle stream errors
+            stream.on('error', (error) => {
+                cleanup();
+                reject(error);
+            });
+        });
+    }
+}
+
+// ================================================================================
+// API EXPORTER
+// ================================================================================
+
+/**
+ * Exports transcript as Anthropic API-compatible messages array.
+ * Reconstructs streaming chunks into complete messages.
+ */
+class ApiExporter {
+    /**
+     * Extract API messages from transcript file
+     * @param {string} filePath - Path to JSONL transcript file
+     * @returns {Promise<Object>} Object with messages array and metadata
+     */
+    async extract(filePath) {
+        return new Promise((resolve, reject) => {
+            const stream = fs.createReadStream(filePath);
+            const rl = readline.createInterface({
+                input: stream,
+                crlfDelay: Infinity,
+            });
+
+            // Cleanup function
+            const cleanup = () => {
+                rl.close();
+                stream.destroy();
+            };
+
+            const messages = [];
+            let pendingAssistant = null;  // {requestId, content: [...]}
+            let hasSummaries = false;
+            let sessionId = null;
+
+            rl.on('line', (line) => {
+                // Parse JSONL line
+                let parsed;
+                try {
+                    parsed = JSON.parse(line);
+                } catch (e) {
+                    return;  // Skip invalid lines
+                }
+
+                // Capture session ID from first message
+                if (!sessionId && parsed.sessionId) {
+                    sessionId = parsed.sessionId;
+                }
+
+                // Skip non-API message types
+                if (parsed.type === 'summary') {
+                    hasSummaries = true;
+                    return;
+                }
+                if (parsed.type === 'system') return;  // Hooks, not API messages
+                if (parsed.isSidechain) return;  // Agent sessions
+
+                // Handle user messages
+                if (parsed.type === 'user') {
+                    // Flush pending assistant if any
+                    if (pendingAssistant) {
+                        messages.push({ role: 'assistant', content: pendingAssistant.content });
+                        pendingAssistant = null;
+                    }
+
+                    const content = parsed.message.content;
+                    const lastMsg = messages[messages.length - 1];
+
+                    // Convert content to array format for merging
+                    const contentAsArray = Array.isArray(content)
+                        ? content
+                        : [{ type: 'text', text: content }];
+
+                    // Merge consecutive user messages into one
+                    if (lastMsg?.role === 'user') {
+                        // Ensure lastMsg.content is an array
+                        if (!Array.isArray(lastMsg.content)) {
+                            lastMsg.content = [{ type: 'text', text: lastMsg.content }];
+                        }
+                        // Append new content blocks
+                        lastMsg.content.push(...contentAsArray);
+                    } else {
+                        // New user message
+                        messages.push(parsed.message);
+                    }
+                }
+
+                // Handle assistant messages (accumulate by requestId)
+                if (parsed.type === 'assistant' && parsed.message?.content) {
+                    const requestId = parsed.requestId;
+
+                    if (pendingAssistant && pendingAssistant.requestId === requestId) {
+                        // Same response, merge content blocks
+                        pendingAssistant.content.push(...parsed.message.content);
+                    } else {
+                        // New response - flush pending and start new
+                        if (pendingAssistant) {
+                            messages.push({ role: 'assistant', content: pendingAssistant.content });
+                        }
+                        pendingAssistant = {
+                            requestId,
+                            content: [...parsed.message.content]
+                        };
+                    }
+                }
+            });
+
+            rl.on('close', () => {
+                // Flush final pending assistant message
+                if (pendingAssistant) {
+                    messages.push({ role: 'assistant', content: pendingAssistant.content });
+                }
+
+                cleanup();
+                resolve({
+                    messages,
+                    metadata: {
+                        sessionId,
+                        messageCount: messages.length,
+                        hasSummaries,
+                    }
+                });
+            });
+
+            rl.on('error', (error) => {
+                cleanup();
+                reject(error);
+            });
+
             stream.on('error', (error) => {
                 cleanup();
                 reject(error);
@@ -1254,16 +1483,20 @@ class CLI {
                     options.maxToolLength = maxLength;
                     break;
 
-                case '--show-system':
-                    options.showSystemMessages = true;
+                case '--no-system':
+                    options.showSystemMessages = false;
                     break;
 
                 case '--no-timestamps':
                     options.showTimestamps = false;
                     break;
 
-                case '--include-agents':
-                    options.includeAgents = true;
+                case '--api-json':
+                    options.apiJson = true;
+                    break;
+
+                case '--exclude-agents':
+                    options.includeAgents = false;
                     break;
 
                 case '--latest':
@@ -1307,10 +1540,11 @@ OPTIONS:
     --no-metadata        Hide session metadata
     --truncate           Truncate long tool inputs/outputs
     --max-length <n>     Maximum length for truncated content (default: 500)
-    --show-system        Show system messages
+    --no-system          Hide system messages (fully suppressed)
     --no-timestamps      Hide timestamps from message headers
-    --include-agents     Include agent sessions in listings (indented under mother)
+    --exclude-agents     Exclude agent sessions from listings
     --latest             Auto-select most recent session for ambiguous matches
+    --api-json           Output as Anthropic API messages JSON (for API continuation)
 
 EXAMPLES:
     cc-view-transcript abc123              # Shortened UUID (prefix match)
@@ -1319,13 +1553,13 @@ EXAMPLES:
     cc-view-transcript /path/to/project    # Sessions for specific project
     cc-view-transcript abc def ghi         # Multiple sessions
     cc-view-transcript . --latest          # Most recent session in current dir
-    cc-view-transcript abc --include-agents # Show agent sessions too
+    cc-view-transcript abc --exclude-agents # Hide agent sessions
 
 NOTES:
-    - By default, shows all content including thinking, tools, and metadata
+    - By default, shows all content including thinking, tools, system messages, and metadata
     - Prefix matching finds sessions starting with the given ID
     - Multiple matches show a candidate list (use --latest to auto-pick)
-    - Agent sessions are hidden by default (use --include-agents)
+    - Agent sessions are included by default (use --exclude-agents to hide)
 `;
         console.log(help);
     }
@@ -1389,7 +1623,34 @@ async function main() {
     // Deduplicate resolved paths (in case multiple inputs resolve to same file)
     const uniquePaths = [...new Set(toProcess)];
 
-    // Process all resolved sessions
+    // Handle API JSON export mode
+    if (options.apiJson) {
+        const exporter = new ApiExporter();
+        const allMessages = [];
+
+        for (const filePath of uniquePaths) {
+            try {
+                const result = await exporter.extract(filePath);
+
+                // Warn about summarized history on stderr
+                if (result.metadata.hasSummaries) {
+                    console.error(`Warning: ${filePath} contains summarized history. Export may be incomplete.`);
+                }
+
+                allMessages.push(...result.messages);
+            } catch (error) {
+                console.error(`Error extracting ${filePath}:`);
+                console.error(error.message);
+                hasErrors = true;
+            }
+        }
+
+        // Output clean JSON to stdout
+        console.log(JSON.stringify({ messages: allMessages }, null, 2));
+        return;
+    }
+
+    // Process all resolved sessions (display mode)
     for (const filePath of uniquePaths) {
         try {
             console.log(`\n=== Parsing: ${filePath} ===\n`);
@@ -1426,6 +1687,7 @@ module.exports = {
     MetadataExtractor,
     SessionResolver,
     TranscriptProcessor,
+    ApiExporter,
     RESOLVE_TYPE,
     DEFAULT_OPTIONS,
 };
