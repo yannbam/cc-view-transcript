@@ -31,19 +31,19 @@ The tool accepts multiple flexible session references:
 
 ### Options
 
-```
--h, --help           Show help message
---no-thinking        Hide Claude's thinking blocks
---no-tools           Hide tool calls and results
---no-metadata        Hide session metadata header
---truncate           Truncate long content
---max-length <n>     Max length for truncated content (default: 500)
---no-system          Hide system messages (shown by default)
---no-timestamps      Hide timestamps from headers
---exclude-agents     Exclude agent sessions from listings
---latest             Auto-select most recent session
---api-json           Export as Anthropic API messages JSON
-```
+| Option | Description |
+|--------|-------------|
+| `-h, --help` | Show help message |
+| `--no-thinking` | Hide thinking blocks (shows one-line indicator) |
+| `--no-tools` | Hide tool calls and results (shows one-line indicator) |
+| `--no-metadata` | Hide session metadata header |
+| `--no-system` | Hide system messages (fully suppressed) |
+| `--no-timestamps` | Hide timestamps from message headers |
+| `--truncate` | Truncate long content |
+| `--max-length <n>` | Max length for truncated content (default: 500) |
+| `--exclude-agents` | Exclude agent sessions from listings |
+| `--latest` | Auto-select most recent session |
+| `--api-json` | Export as Anthropic API messages JSON |
 
 ### Examples
 
@@ -75,9 +75,11 @@ When given a prefix or directory:
 2. **Multiple matches** → Shows candidate list with:
    - Session ID
    - Project directory (encoded)
-   - Last modified date
+   - Last modified date (local time with timezone offset)
    - File size
-   - Agent sessions (included by default, use `--exclude-agents` to hide)
+   - Agent sessions nested under parent (use `--exclude-agents` to hide)
+
+Sessions are listed oldest-first with newest at bottom (natural terminal scrollback order).
 
 Use `--latest` to auto-pick the most recently modified session.
 
@@ -120,12 +122,15 @@ The output is a JSON object with a `messages` array ready for the Anthropic API:
 ## Output Format
 
 The transcript displays:
-- **Session metadata** - ID, project path, timestamps, message counts
-- **Human messages** - User input
-- **Claude responses** - Text output
-- **Thinking blocks** - Claude's reasoning (optional)
-- **Tool calls** - Tool name, ID, input
-- **Tool results** - Output, errors, status
+- **Session metadata** - ID, project path, start time, message/tool counts, sub-agent indicator
+- **Human messages** - User input with timestamp and line number (L-prefix)
+- **Claude responses** - Text output with timestamp and line number
+- **Thinking blocks** - Claude's reasoning (hideable with `--no-thinking`)
+- **Tool calls** - Tool name, ID, input (hideable with `--no-tools`)
+- **Tool results** - Output, errors, status with pretty-printed JSON
+- **System messages** - Hooks and notifications (hideable with `--no-system`)
+
+All timestamps display local time with timezone offset (e.g., `2025-12-29T10:30:45 +01:00`).
 
 ## File Locations
 
